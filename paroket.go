@@ -8,30 +8,28 @@ import (
 
 type Paroket interface {
 	// 初始化数据库
-	initDB() error
+	InitDB() error
 	// 加载数据库
-	loadDB() error
+	LoadDB(string) error
 
 	// 添加对象
-	AddObject(object.Object) (object.Object, error)
+	AddObject(*object.Object) (*object.Object, error)
 	// 删除对象
-	RemoveObject(object.ObjectId) (object.Object, error)
-	// 更新对象
-	UpdateObject(object.Object) (object.Object, error)
+	RemoveObject(object.ObjectId) (*object.Object, error)
 
 	// 添加属性类
-	AddAttributeClass(attribute.AttributeClass) (attribute.AttributeClass, error)
+	AddAttributeClass(*attribute.AttributeClass) (*attribute.AttributeClass, error)
 	// 删除属性类
-	RemoveAttributeClass(attribute.AttributeClassId) (attribute.AttributeClass, error)
+	RemoveAttributeClass(attribute.AttributeClassId) (*attribute.AttributeClass, error)
 	// 更新属性类
-	UpdateAttributeClass(attribute.AttributeClass) (attribute.AttributeClass, error)
+	UpdateAttributeClass(*attribute.AttributeClass) (*attribute.AttributeClass, error)
 
 	// 添加表
-	AddTable(table.Table) (table.Table, error)
+	AddTable(*table.Table) (*table.Table, error)
 	// 删除表
-	RemoveTable(table.TableId) (table.Table, error)
+	RemoveTable(table.TableId) (*table.Table, error)
 	// 更新表
-	UpdateTable(table.Table) (table.Table, error)
+	UpdateTable(*table.Table) (*table.Table, error)
 
 	// 添加对象到表
 	AddObjectToTable(table.TableId, object.ObjectId) error
@@ -44,7 +42,7 @@ type Paroket interface {
 	RemoveAttributeClassFromTable(table.TableId, attribute.AttributeClassId) error
 
 	// 添加属性到对象
-	AddAttributeClassToObject(object.ObjectId, attribute.AttributeClassId) error
+	AddAttributeClassToObject(object.ObjectId, attribute.AttributeClassId, attribute.Attribute) error
 	// 从对象删除属性类
 	RemoveAttributeClassFromObject(object.ObjectId, attribute.AttributeClassId) error
 

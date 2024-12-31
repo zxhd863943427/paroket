@@ -15,6 +15,10 @@ func (t *TextAttribute) GetId() uuid.UUID {
 	return t.id
 }
 
-func (t *TextAttribute) GetValue() string {
-	return fmt.Sprintf(`{id: "%s",type: "text", value: "%s"}`, t.id, t.value)
+func (t *TextAttribute) GetJSON() string {
+	return fmt.Sprintf(`{"id": "%s","type": "%s", "value": "%s"}`, t.id, AttributeTypeText, t.value)
+}
+
+func (t *TextAttribute) GetType() string {
+	return AttributeTypeText
 }
