@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 
 	"paroket/attribute"
@@ -129,7 +128,7 @@ func (s *SqliteImpl) LoadDB(dbPath string) (err error) {
 // 添加对象
 func (s *SqliteImpl) AddObject(o *object.Object) (obj *object.Object, err error) {
 	addObjectStmt := "INSERT INTO objects (object_id) VALUES (?)"
-	if _, err = s.db.Exec(addObjectStmt, uuid.UUID(o.ObjectId)); err != nil {
+	if _, err = s.db.Exec(addObjectStmt, o.ObjectId); err != nil {
 		return
 	}
 	obj = o
