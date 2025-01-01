@@ -1,6 +1,7 @@
 package table
 
 import (
+	"database/sql/driver"
 	"paroket/utils"
 	"strings"
 
@@ -8,6 +9,21 @@ import (
 )
 
 type TableId uuid.UUID
+
+func NewTableId() (TableId, error) {
+	uuid, err := uuid.NewV7()
+	return TableId(uuid), err
+}
+
+// Scan 实现 sql.Scanner 接口
+func (id *TableId) Scan(value interface{}) error {
+	return (*uuid.UUID)(id).Scan(value)
+}
+
+// Value 实现 driver.Valuer 接口
+func (id TableId) Value() (driver.Value, error) {
+	return uuid.UUID(id).Value()
+}
 
 type Table struct {
 	TableId   TableId

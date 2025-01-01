@@ -3,10 +3,14 @@ package paroket
 import (
 	"database/sql"
 	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
+
 	"paroket/attribute"
 	"paroket/object"
 	"paroket/table"
-	"time"
 )
 
 type SqliteImpl struct {
@@ -29,27 +33,27 @@ func NewSqliteImpl() (s *SqliteImpl) {
 func (s *SqliteImpl) InitDB() (err error) {
 	// 创建表
 	createTableStmt := `CREATE TABLE IF NOT EXISTS tables (
-		table_id INTEGER PRIMARY KEY,
-    table_name TEXT NOT NULL,
+		table_id BLOB PRIMARY KEY,
+    	table_name TEXT NOT NULL,
 		meta_info TEXT NOT NULL,
 		table_version INTEGER NOT NULL
 	);`
 
 	// 创建视图
 	createTableViewStmt := `CREATE TABLE IF NOT EXISTS table_views (
-		table_id INTEGER NOT NULL,
+		table_id BLOB NOT NULL,
 		filter JSONB NOT NULL,
-		FOREIGN KEY (table_id) REFERENCES table(table_id)
+		FOREIGN KEY (table_id) REFERENCES tables(table_id)
 	);`
 
 	// 创建对象
 	createObjectStmt := `CREATE TABLE IF NOT EXISTS objects (
-		object_id INTEGER PRIMARY KEY
+		object_id BLOB PRIMARY KEY
 	);`
 
 	// 创建属性类
 	createAttributeClassStmt := `CREATE TABLE IF NOT EXISTS attribute_classes (
-		class_id INTEGER PRIMARY KEY,
+		class_id BLOB PRIMARY KEY,
 		attribute_name TEXT NOT NULL,
 		attribute_type TEXT NOT NULL,
 		attribute_meta_info JSONB NOT NULL
@@ -57,33 +61,33 @@ func (s *SqliteImpl) InitDB() (err error) {
 
 	// 创建表与属性类的关联表
 	createTableToAttributeClassStmt := `CREATE TABLE IF NOT EXISTS table_to_attribute_classes (
-		table_id INTEGER NOT NULL,
-		class_id INTEGER NOT NULL,
+		table_id BLOB NOT NULL,
+		class_id BLOB NOT NULL,
 		FOREIGN KEY (table_id) REFERENCES tables(table_id) ON DELETE CASCADE,
 		FOREIGN KEY (class_id) REFERENCES attribute_classes(class_id) ON DELETE CASCADE
 	);`
 
 	// 创建对象与属性类的关联表
 	createObjectToAttributeClassStmt := `CREATE TABLE IF NOT EXISTS object_to_attribute_classes (
-		object_id INTEGER NOT NULL,
-		class_id INTEGER NOT NULL,
+		object_id BLOB NOT NULL,
+		class_id BLOB NOT NULL,
 		FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE,
 		FOREIGN KEY (class_id) REFERENCES attribute_classes(class_id) ON DELETE CASCADE
 	);`
 
 	// 创建对象与表格的关联表
 	createObjectToTableStmt := `CREATE TABLE IF NOT EXISTS object_to_tables (
-		object_id INTEGER NOT NULL,
-		table_id INTEGER NOT NULL,
+		object_id BLOB NOT NULL,
+		table_id BLOB NOT NULL,
 		FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE,
 		FOREIGN KEY (table_id) REFERENCES tables(table_id) ON DELETE CASCADE
 	);`
 
 	initStmt := []string{
-		createTableStmt,
-		createTableViewStmt,
 		createObjectStmt,
+		createTableStmt,
 		createAttributeClassStmt,
+		createTableViewStmt,
 		createTableToAttributeClassStmt,
 		createObjectToAttributeClassStmt,
 		createObjectToTableStmt,
@@ -99,6 +103,7 @@ func (s *SqliteImpl) InitDB() (err error) {
 // 加载数据库
 func (s *SqliteImpl) LoadDB(dbPath string) (err error) {
 	db, err := sql.Open("sqlite3", dbPath)
+	db.Exec("PRAGMA journal_mode=WAL")
 	if err != nil {
 		return
 	}
@@ -109,7 +114,7 @@ func (s *SqliteImpl) LoadDB(dbPath string) (err error) {
 // 添加对象
 func (s *SqliteImpl) AddObject(o *object.Object) (obj *object.Object, err error) {
 	addObjectStmt := "INSERT INTO objects (object_id) VALUES (?)"
-	if _, err = s.db.Exec(addObjectStmt, o.ObjectId); err != nil {
+	if _, err = s.db.Exec(addObjectStmt, uuid.UUID(o.ObjectId)); err != nil {
 		return
 	}
 	obj = o
@@ -136,7 +141,10 @@ func (s *SqliteImpl) AddAttributeClass(ac *attribute.AttributeClass) (newAc *att
 		return
 	}
 	// 新建属性属性ID——数据表
-	createAttributeAndIndexTable(s, ac)
+	err = createAttributeAndIndexTable(s, ac)
+	if err != nil {
+		return
+	}
 	newAc = &attribute.AttributeClass{
 		ClassId:           ac.ClassId,
 		AttributeName:     ac.AttributeName,
@@ -155,24 +163,24 @@ func createAttributeAndIndexTable(s *SqliteImpl, ac *attribute.AttributeClass) (
 	if ac.AttributeType == "text" {
 		createAttributeTableStmt = fmt.Sprintf(
 			`CREATE TABLE text_%s (
-			attribute_id INTEGER PRIMARY KEY,
-			object_id INTEGER NOT NULL,
+			attribute_id BLOB PRIMARY KEY,
+			object_id BLOB NOT NULL,
 			update_time DATETIME NOT NULL,
 			data JSONB NOT NULL,
 			FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE
 			)`,
 			ac.ClassId.String(),
 		)
-		createAttributeIndexTableStmt = fmt.Sprintf(`CREATE TABLE text_%s_index (
-		attribute_id NOT NULL,
-		index TEXT NOT NULL,
+		createAttributeIndexTableStmt = fmt.Sprintf(`CREATE TABLE text_%s_idx (
+		attribute_id BLOB NOT NULL,
+		idx TEXT NOT NULL,
 		FOREIGN KEY (attribute_id) REFERENCES text_%s(attribute_id) ON DELETE CASCADE
 		)`,
 			ac.ClassId.String(),
 			ac.ClassId.String(),
 		)
 		createAttributeIndexStmt = fmt.Sprintf(
-			` CREATE INDEX idx_text_%s_index ON text_%s_index(index)`,
+			` CREATE INDEX idx_text_%s_idx ON text_%s_idx(idx)`,
 			ac.ClassId.String(),
 			ac.ClassId.String(),
 		)
@@ -190,6 +198,7 @@ func createAttributeAndIndexTable(s *SqliteImpl, ac *attribute.AttributeClass) (
 
 	for _, stmt := range createStmt {
 		if _, err = tx.Exec(stmt); err != nil {
+			tx.Rollback()
 			return
 		}
 	}
@@ -214,7 +223,7 @@ func (s *SqliteImpl) RemoveAttributeClass(acid attribute.AttributeClassId) (ac *
 		return
 	}
 
-	deleteAttributeClassStmt := `DELETE FROM attribute_classes WHERE attribute_class_id = ?`
+	deleteAttributeClassStmt := `DELETE FROM attribute_classes WHERE class_id = ?`
 	// 删除索引表和关联表
 	err = deleteAttributeIndexAndData(tx, ac)
 	if err != nil {
@@ -259,6 +268,7 @@ func (s *SqliteImpl) UpdateAttributeClass(ac *attribute.AttributeClass) (newAc *
 	}
 	newAc = &attribute.AttributeClass{
 		ClassId:           ac.ClassId,
+		AttributeName:     ac.AttributeName,
 		AttributeType:     ac.AttributeType,
 		AttributeMetaInfo: ac.AttributeMetaInfo,
 	}
@@ -279,7 +289,7 @@ func (s *SqliteImpl) AddTable(t *table.Table) (nt *table.Table, err error) {
 	// 创建table所对应的数据表
 	createDataTableStmt := fmt.Sprintf(
 		`CREATE TABLE table_%s (
-		object_id INTEGER PRIMARY KEY, 
+		object_id BLOB PRIMARY KEY, 
 		update_time DATETIME,
 		FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE
 		)`,
@@ -306,6 +316,7 @@ func (s *SqliteImpl) AddTable(t *table.Table) (nt *table.Table, err error) {
 
 // 删除表
 func (s *SqliteImpl) RemoveTable(tid table.TableId) (t *table.Table, err error) {
+	t = &table.Table{}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return
@@ -340,6 +351,7 @@ func (s *SqliteImpl) RemoveTable(tid table.TableId) (t *table.Table, err error) 
 
 // 更新表
 func (s *SqliteImpl) UpdateTable(t *table.Table) (ot *table.Table, err error) {
+	ot = &table.Table{}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return
@@ -460,13 +472,13 @@ func insertAttributeAndIndex(tx *sql.Tx, oid object.ObjectId, acid attribute.Att
 	if attr.GetType() == attribute.AttributeTypeText {
 
 		// 插入属性表
-		insertAttributeStmt := fmt.Sprintf(`INSERT INTO text_%s(attribute_id, object_id, update_time, data) VALUES (?, ?, ?, ?)`)
+		insertAttributeStmt := fmt.Sprintf(`INSERT INTO text_%s(attribute_id, object_id, update_time, data) VALUES (?, ?, ?, ?)`, acid.String())
 		_, err = tx.Exec(insertAttributeStmt, acid, oid, time.Now(), attr.GetJSON())
 		if err != nil {
 			return
 		}
 		// 插入索引表
-		insertIndexStmt := fmt.Sprintf(`INSERT INTO text_%s_index(attribute_id, index) VALUES (?, ?)`)
+		insertIndexStmt := fmt.Sprintf(`INSERT INTO text_%s_index(attribute_id, index) VALUES (?, ?)`, acid.String())
 		_, err = tx.Exec(insertIndexStmt, acid, attr.GetJSON())
 		if err != nil {
 			return
@@ -561,7 +573,63 @@ func (s *SqliteImpl) ListTables() (tableList []table.Table, err error) {
 }
 
 // 获取属性类关联的对象列表
-func (s *SqliteImpl) ListAttributeClassObjects(acid attribute.AttributeClassId) (objList []object.Object, err error)
+func (s *SqliteImpl) ListAttributeClassObjects(acid attribute.AttributeClassId) (objList []object.Object, err error) {
+	queryObjFromAttrClassStmt := `SELECT object_id FROM object_to_attribute_classes WHERE class_id = ?`
+	rows, err := s.db.Query(queryObjFromAttrClassStmt, acid)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		obj := object.Object{}
+		err = rows.Scan(&obj.ObjectId)
+		if err != nil {
+			return
+		}
+		objList = append(objList, obj)
+	}
+	return
+}
 
 // 获取对象关联的属性列表
-func (s *SqliteImpl) ListObjectAttributes(object.ObjectId) (attrList []attribute.Attribute, err error)
+func (s *SqliteImpl) ListObjectAttributes(objId object.ObjectId) (attrStoreList []attribute.AttributeStore, err error) {
+	tx, err := s.db.Begin()
+	queryAttrClassStmt := fmt.Sprintf(`
+    SELECT class_id, attribute_name, attribute_type, attribute_meta_info
+      FROM attribute_classes
+      WHERE class_id in (
+        SELECT class_id 
+        FROM object_to_attribute_classes 
+        WHERE object_id = ?)`)
+	attrClassList := []attribute.AttributeClass{}
+	classRows, err := tx.Query(queryAttrClassStmt, objId)
+	if err != nil {
+		return
+	}
+	defer classRows.Close()
+	for classRows.Next() {
+		var attrClass = attribute.AttributeClass{}
+		err = classRows.Scan(&attrClass.ClassId, &attrClass.AttributeName, &attrClass.AttributeType, &attrClass.AttributeMetaInfo)
+		if err != nil {
+			return
+		}
+		attrClassList = append(attrClassList, attrClass)
+	}
+	for _, attrClass := range attrClassList {
+		attributeStore := attribute.AttributeStore{
+			AttributeType: attrClass.AttributeType,
+		}
+		queryAttrStmt := fmt.Sprintf(`SELECT attribute_id, object_id, update_time, data FROM %s WHERE object_id = ?`, attrClass.GetDataTableName())
+		err = tx.QueryRow(queryAttrStmt, objId).Scan(
+			&attributeStore.AttributeId,
+			&attributeStore.ObjectId,
+			&attributeStore.UpdateDate,
+			&attributeStore.Data,
+		)
+		if err != nil {
+			return
+		}
+		attrStoreList = append(attrStoreList, attributeStore)
+	}
+	return
+}

@@ -54,5 +54,5 @@ type Paroket interface {
 	// 获取属性类关联的对象列表
 	ListAttributeClassObjects(attribute.AttributeClassId) ([]object.Object, error)
 	// 获取对象关联的属性列表
-	ListObjectAttributes(object.ObjectId) ([]attribute.Attribute, error)
+	ListObjectAttributes(object.ObjectId) ([]attribute.AttributeStore, error)
 }

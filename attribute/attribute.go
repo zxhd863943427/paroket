@@ -2,8 +2,10 @@ package attribute
 
 import (
 	"database/sql/driver"
+	"fmt"
 	"paroket/utils"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -39,6 +41,31 @@ type AttributeClass struct {
 	AttributeMetaInfo utils.JSONMap
 }
 
+func NewAttributeClassId() (AttributeClassId, error) {
+	uuid, err := uuid.NewV7()
+	return AttributeClassId(uuid), err
+}
+
+func NewAttributeId() (AttributeId, error) {
+	uuid, err := uuid.NewV7()
+	return AttributeId(uuid), err
+}
+
+func (ac *AttributeClass) GetDataTableName() string {
+	return fmt.Sprintf(
+		`%s_%s`,
+		ac.AttributeType,
+		ac.ClassId.String())
+}
+
+func (ac *AttributeClass) GetDataIndexName() string {
+	return fmt.Sprintf(
+		`%s_%s_index`,
+		ac.AttributeType,
+		ac.ClassId.String(),
+	)
+}
+
 func (acid AttributeClassId) String() string {
 	uuid := uuid.UUID(acid)
 	return strings.ReplaceAll(uuid.String(), "-", "_")
@@ -68,3 +95,11 @@ type Attribute interface {
 const (
 	AttributeTypeText = "text"
 )
+
+type AttributeStore struct {
+	ObjectId      uuid.UUID
+	AttributeId   uuid.UUID
+	AttributeType string
+	UpdateDate    time.Time
+	Data          string
+}

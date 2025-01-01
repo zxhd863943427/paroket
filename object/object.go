@@ -12,6 +12,11 @@ type Object struct {
 	ObjectId ObjectId
 }
 
+func NewObjectId() (ObjectId, error) {
+	uuid, err := uuid.NewV7()
+	return ObjectId(uuid), err
+}
+
 // Scan 实现 sql.Scanner 接口
 func (id *ObjectId) Scan(value interface{}) error {
 	return (*uuid.UUID)(id).Scan(value)
