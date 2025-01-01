@@ -197,8 +197,9 @@ func TestSqliteImpl(t *testing.T) {
 	t.Run("Test Batch Operations", func(t *testing.T) {
 		cleanupDatabase()
 		// 创建多个对象
-		objects := make([]*object.Object, 10)
-		for i := 0; i < 10; i++ {
+		testNum := 100
+		objects := make([]*object.Object, testNum)
+		for i := 0; i < testNum; i++ {
 			objId, err := object.NewObjectId()
 			assert.NoError(t, err)
 			objects[i] = &object.Object{ObjectId: objId}
@@ -214,7 +215,7 @@ func TestSqliteImpl(t *testing.T) {
 		var count int
 		err := sqlite.db.QueryRow("SELECT COUNT(*) FROM objects").Scan(&count)
 		assert.NoError(t, err)
-		assert.Equal(t, 10, count)
+		assert.Equal(t, testNum, count)
 
 		// 批量删除对象
 		for _, obj := range objects {
