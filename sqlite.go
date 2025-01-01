@@ -103,9 +103,24 @@ func (s *SqliteImpl) InitDB() (err error) {
 // 加载数据库
 func (s *SqliteImpl) LoadDB(dbPath string) (err error) {
 	db, err := sql.Open("sqlite3", dbPath)
-	db.Exec("PRAGMA journal_mode=WAL")
 	if err != nil {
 		return
+	}
+	// 启用外键支持
+	if _, err = db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		return
+	}
+	// 设置WAL模式
+	if _, err = db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		return
+	}
+	// 验证外键支持是否启用
+	var fkEnabled int
+	if err = db.QueryRow("PRAGMA foreign_keys;").Scan(&fkEnabled); err != nil {
+		return
+	}
+	if fkEnabled != 1 {
+		return fmt.Errorf("failed to enable foreign key support")
 	}
 	s.db = db
 	return
@@ -123,11 +138,25 @@ func (s *SqliteImpl) AddObject(o *object.Object) (obj *object.Object, err error)
 
 // 删除对象
 func (s *SqliteImpl) RemoveObject(id object.ObjectId) (obj *object.Object, err error) {
-	// 删除对象
-	deleteObjectStmt := "DELETE FROM objects WHERE object_id = ?"
-	if _, err = s.db.Exec(deleteObjectStmt, id); err != nil {
+	// 开启事务
+	tx, err := s.db.Begin()
+	if err != nil {
 		return
 	}
+
+	// 删除对象
+	deleteObjectStmt := "DELETE FROM objects WHERE object_id = ?"
+	if _, err = tx.Exec(deleteObjectStmt, id); err != nil {
+		tx.Rollback()
+		return
+	}
+
+	// 提交事务
+	if err = tx.Commit(); err != nil {
+		tx.Rollback()
+		return
+	}
+
 	obj = &object.Object{ObjectId: id}
 	return
 
@@ -136,15 +165,23 @@ func (s *SqliteImpl) RemoveObject(id object.ObjectId) (obj *object.Object, err e
 // 添加属性类
 func (s *SqliteImpl) AddAttributeClass(ac *attribute.AttributeClass) (newAc *attribute.AttributeClass, err error) {
 	// 插入属性类到属性类表
-	addAttributeClassStmt := "INSERT INTO attribute_classes (class_id, attribute_name, attribute_type, attribute_meta_info) VALUES (?, ?, ?, ?)"
-	if _, err = s.db.Exec(addAttributeClassStmt, ac.ClassId, ac.AttributeName, ac.AttributeType, ac.AttributeMetaInfo); err != nil {
+	tx, err := s.db.Begin()
+
+	if err = ac.InsertClass(tx, "attribute_classes"); err != nil {
+		tx.Rollback()
 		return
 	}
 	// 新建属性属性ID——数据表
-	err = createAttributeAndIndexTable(s, ac)
-	if err != nil {
+	if err = ac.CreateDataTable(tx); err != nil {
+		tx.Rollback()
 		return
 	}
+
+	if err = tx.Commit(); err != nil {
+		tx.Rollback()
+		return
+	}
+
 	newAc = &attribute.AttributeClass{
 		ClassId:           ac.ClassId,
 		AttributeName:     ac.AttributeName,
@@ -155,71 +192,14 @@ func (s *SqliteImpl) AddAttributeClass(ac *attribute.AttributeClass) (newAc *att
 
 }
 
-// 创建属性和索引表，目前仅实现文本属性表，后续可以扩展为其他类型。
-func createAttributeAndIndexTable(s *SqliteImpl, ac *attribute.AttributeClass) (err error) {
-	// 根据类型创建属性和索引表
-	var createAttributeTableStmt, createAttributeIndexTableStmt, createAttributeIndexStmt string
-
-	if ac.AttributeType == "text" {
-		createAttributeTableStmt = fmt.Sprintf(
-			`CREATE TABLE text_%s (
-			attribute_id BLOB PRIMARY KEY,
-			object_id BLOB NOT NULL,
-			update_time DATETIME NOT NULL,
-			data JSONB NOT NULL,
-			FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE
-			)`,
-			ac.ClassId.String(),
-		)
-		createAttributeIndexTableStmt = fmt.Sprintf(`CREATE TABLE text_%s_idx (
-		attribute_id BLOB NOT NULL,
-		idx TEXT NOT NULL,
-		FOREIGN KEY (attribute_id) REFERENCES text_%s(attribute_id) ON DELETE CASCADE
-		)`,
-			ac.ClassId.String(),
-			ac.ClassId.String(),
-		)
-		createAttributeIndexStmt = fmt.Sprintf(
-			` CREATE INDEX idx_text_%s_idx ON text_%s_idx(idx)`,
-			ac.ClassId.String(),
-			ac.ClassId.String(),
-		)
-
-	}
-	createStmt := []string{
-		createAttributeTableStmt,
-		createAttributeIndexTableStmt,
-		createAttributeIndexStmt,
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return
-	}
-
-	for _, stmt := range createStmt {
-		if _, err = tx.Exec(stmt); err != nil {
-			tx.Rollback()
-			return
-		}
-	}
-	if err = tx.Commit(); err != nil {
-		tx.Rollback()
-	}
-
-	return
-
-}
-
 // 删除属性类
 func (s *SqliteImpl) RemoveAttributeClass(acid attribute.AttributeClassId) (ac *attribute.AttributeClass, err error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return
 	}
-	ac = &attribute.AttributeClass{}
-
-	queryAtttributeClassStmt := `SELECT class_id, attribute_name, attribute_type, attribute_meta_info FROM attribute_classes WHERE class_id = ?`
-	if err = tx.QueryRow(queryAtttributeClassStmt, acid).Scan(&ac.ClassId, &ac.AttributeName, &ac.AttributeType, &ac.AttributeMetaInfo); err != nil {
+	ac, err = acid.QueryAttributeClass(tx)
+	if err != nil {
 		return
 	}
 
@@ -244,11 +224,8 @@ func (s *SqliteImpl) RemoveAttributeClass(acid attribute.AttributeClassId) (ac *
 // 删除索引表和关联表
 func deleteAttributeIndexAndData(tx *sql.Tx, ac *attribute.AttributeClass) (err error) {
 	var deleteIndexStmt, deleteDataStmt string
-	if ac.AttributeType == attribute.AttributeTypeText {
-		deleteIndexStmt = fmt.Sprintf(`DROP TABLE text_%s_index`, ac.ClassId.String())
-		deleteDataStmt = fmt.Sprintf(`DROP TABLE text_%s`, ac.ClassId.String())
-
-	}
+	deleteIndexStmt = fmt.Sprintf(`DROP TABLE %s`, ac.GetDataIndexName())
+	deleteDataStmt = fmt.Sprintf(`DROP TABLE %s`, ac.GetDataTableName())
 	deleteStmts := []string{
 		deleteIndexStmt,
 		deleteDataStmt,
@@ -256,6 +233,9 @@ func deleteAttributeIndexAndData(tx *sql.Tx, ac *attribute.AttributeClass) (err 
 
 	for _, stmt := range deleteStmts {
 		_, err = tx.Exec(stmt)
+		if err != nil {
+			return
+		}
 	}
 	return
 }
@@ -386,9 +366,11 @@ func (s *SqliteImpl) AddObjectToTable(tid table.TableId, oid object.ObjectId) (e
 	insertObjToTableStmt := `INSERT INTO object_to_tables (object_id, table_id) VALUES (?, ?)`
 
 	if _, err = tx.Exec(insertTableStmt, oid, time.Now()); err != nil {
+		tx.Rollback()
 		return
 	}
 	if _, err = tx.Exec(insertObjToTableStmt, oid, tid); err != nil {
+		tx.Rollback()
 		return
 	}
 	err = tx.Commit()
@@ -447,62 +429,43 @@ func (s *SqliteImpl) RemoveAttributeClassFromTable(tid table.TableId, acid attri
 }
 
 // 添加属性到对象
-func (s *SqliteImpl) AddAttributeClassToObject(oid object.ObjectId, acid attribute.AttributeClassId, attr attribute.Attribute) (err error) {
+func (s *SqliteImpl) AddAttributeToObject(oid object.ObjectId, attr attribute.Attribute) (err error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return
 	}
+	// 插入到属性对象关联表
 	insertClassToObjStmt := `INSERT INTO object_to_attributes (object_id, class_id) VALUES (?, ?)`
-	// 插入到属性和索引表
-	if _, err = tx.Exec(insertClassToObjStmt, oid, acid); err != nil {
-		tx.Rollback()
-		return
-	}
-	if err = insertAttributeAndIndex(tx, oid, acid, attr); err != nil {
+
+	if _, err = tx.Exec(insertClassToObjStmt, oid, attr.GetClassId()); err != nil {
 		tx.Rollback()
 		return
 	}
 
-	return
-}
-
-// 插入数据到属性ID表和索引表
-func insertAttributeAndIndex(tx *sql.Tx, oid object.ObjectId, acid attribute.AttributeClassId, attr attribute.Attribute) (err error) {
 	// 插入到属性和索引表
-	if attr.GetType() == attribute.AttributeTypeText {
-
-		// 插入属性表
-		insertAttributeStmt := fmt.Sprintf(`INSERT INTO text_%s(attribute_id, object_id, update_time, data) VALUES (?, ?, ?, ?)`, acid.String())
-		_, err = tx.Exec(insertAttributeStmt, acid, oid, time.Now(), attr.GetJSON())
-		if err != nil {
-			return
-		}
-		// 插入索引表
-		insertIndexStmt := fmt.Sprintf(`INSERT INTO text_%s_index(attribute_id, index) VALUES (?, ?)`, acid.String())
-		_, err = tx.Exec(insertIndexStmt, acid, attr.GetJSON())
-		if err != nil {
-			return
-		}
-
+	if err = attr.InsertData(tx, oid); err != nil {
+		tx.Rollback()
+		return
 	}
+
 	if err = tx.Commit(); err != nil {
+		tx.Rollback()
 		return
 	}
-	return
 
+	return
 }
 
 // 从对象删除属性类
 func (s *SqliteImpl) RemoveAttributeClassFromObject(oid object.ObjectId, acid attribute.AttributeClassId) (err error) {
 
-	// 从属性类表中获取类型
-	var attrType string
-	err = s.db.QueryRow("SELECT attribute_type FROM attribute_classes WHERE class_id = ?").Scan(&attrType)
+	// 开启事务
+	tx, err := s.db.Begin()
 	if err != nil {
 		return
 	}
-	// 开启事务
-	tx, err := s.db.Begin()
+	// 使用acid查找attributeClass
+	ac, err := acid.QueryAttributeClass(tx)
 	if err != nil {
 		return
 	}
@@ -512,25 +475,24 @@ func (s *SqliteImpl) RemoveAttributeClassFromObject(oid object.ObjectId, acid at
 		tx.Rollback()
 		return
 	}
-	// 从对应的属性ID表中删除
-	if err = DeleteAttribute(tx, oid, acid, attrType); err != nil {
+	// 查找对应的属性
+	attr, err := ac.NewAttribute()
+	if err != nil {
+		return
+	}
+	err = attr.SearchData(tx, oid)
+	if err != nil {
+		return
+	}
+
+	// 删除属性
+	if err = attr.DeleteData(tx); err != nil {
 		tx.Rollback()
 		return
 	}
 	if err = tx.Commit(); err != nil {
 		tx.Rollback()
 		return
-	}
-	// 不用从索引表中删除，因为索引使用了在属性ID表中的外键索引
-	return
-}
-
-func DeleteAttribute(tx *sql.Tx, oid object.ObjectId, acid attribute.AttributeClassId, attrType string) (err error) {
-	if attrType == attribute.AttributeTypeText {
-		deleteObjFromAttrDataStmt := fmt.Sprintf(`DELETE FROM text_%s WHERE object_id = ?`, acid.String())
-		if _, err = tx.Exec(deleteObjFromAttrDataStmt, oid); err != nil {
-			return
-		}
 	}
 	return
 }

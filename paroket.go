@@ -42,7 +42,7 @@ type Paroket interface {
 	RemoveAttributeClassFromTable(table.TableId, attribute.AttributeClassId) error
 
 	// 添加属性到对象
-	AddAttributeClassToObject(object.ObjectId, attribute.AttributeClassId, attribute.Attribute) error
+	AddAttributeToObject(object.ObjectId, attribute.Attribute) error
 	// 从对象删除属性类
 	RemoveAttributeClassFromObject(object.ObjectId, attribute.AttributeClassId) error
 
