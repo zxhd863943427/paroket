@@ -17,7 +17,6 @@ type TextAttribute struct {
 }
 
 type TextJsonData struct {
-	Id    AttributeId
 	Type  string
 	Value string
 }
@@ -33,7 +32,7 @@ func (t *TextAttribute) GetId() AttributeId {
 }
 
 func (t *TextAttribute) GetJSON() string {
-	return fmt.Sprintf(`{"id": "%s","type": "%s", "value": "%s"}`, t.id, AttributeTypeText, t.value)
+	return fmt.Sprintf(`{"type": "%s", "value": "%s"}`, AttributeTypeText, t.value)
 }
 
 func (t *TextAttribute) GetType() string {

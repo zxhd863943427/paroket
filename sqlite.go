@@ -435,7 +435,7 @@ func (s *SqliteImpl) AddAttributeToObject(oid object.ObjectId, attr attribute.At
 		return
 	}
 	// 插入到属性对象关联表
-	insertClassToObjStmt := `INSERT INTO object_to_attributes (object_id, class_id) VALUES (?, ?)`
+	insertClassToObjStmt := `INSERT INTO object_to_attribute_classes (object_id, class_id) VALUES (?, ?)`
 
 	if _, err = tx.Exec(insertClassToObjStmt, oid, attr.GetClassId()); err != nil {
 		tx.Rollback()
@@ -470,7 +470,7 @@ func (s *SqliteImpl) RemoveAttributeClassFromObject(oid object.ObjectId, acid at
 		return
 	}
 	// 从关联表中删除
-	deleteAttrFromObjStmt := `DELETE FROM object_to_attributes WHERE object_id = ? AND class_id = ?`
+	deleteAttrFromObjStmt := `DELETE FROM object_to_attribute_classes WHERE object_id = ? AND class_id = ?`
 	if _, err = tx.Exec(deleteAttrFromObjStmt, oid, acid); err != nil {
 		tx.Rollback()
 		return
@@ -510,6 +510,7 @@ func (s *SqliteImpl) ListAttributeClasses() (acList []attribute.AttributeClass, 
 		if err != nil {
 			return
 		}
+		acList = append(acList, ac)
 	}
 	return
 }
@@ -593,5 +594,6 @@ func (s *SqliteImpl) ListObjectAttributes(objId object.ObjectId) (attrStoreList 
 		}
 		attrStoreList = append(attrStoreList, attributeStore)
 	}
+	err = tx.Commit()
 	return
 }

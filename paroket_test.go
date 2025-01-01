@@ -286,4 +286,203 @@ func TestSqliteImpl(t *testing.T) {
 		}
 		assert.Equal(t, 0, count, "Object should be removed from main table after deletion. Count: %d", count)
 	})
+
+	// 测试从表删除对象
+	t.Run("Test Remove Object From Table", func(t *testing.T) {
+		cleanupDatabase()
+		// 创建对象
+		objId, err := object.NewObjectId()
+		assert.NoError(t, err)
+		obj := &object.Object{ObjectId: objId}
+
+		// 添加对象
+		_, err = sqlite.AddObject(obj)
+		assert.NoError(t, err)
+
+		// 创建表
+		table, err := table.NewTable()
+		assert.NoError(t, err)
+		table.TableName = "test table"
+
+		// 添加表
+		_, err = sqlite.AddTable(table)
+		assert.NoError(t, err)
+
+		// 添加对象到表
+		err = sqlite.AddObjectToTable(table.TableId, obj.ObjectId)
+		assert.NoError(t, err)
+
+		// 从表删除对象
+		err = sqlite.RemoveObjectFromTable(table.TableId, obj.ObjectId)
+		assert.NoError(t, err)
+
+		// 验证对象是否从表中删除
+		var exists bool
+		err = sqlite.db.QueryRow(
+			"SELECT EXISTS (SELECT 1 FROM object_to_tables WHERE object_id = ? AND table_id = ?)",
+			obj.ObjectId, table.TableId,
+		).Scan(&exists)
+		assert.NoError(t, err)
+		assert.False(t, exists)
+	})
+
+	// 测试属性类与表的关联操作
+	t.Run("Test Attribute Class Table Operations", func(t *testing.T) {
+		cleanupDatabase()
+		// 创建属性类
+		ac, err := attribute.NewAttributeClass("text")
+		assert.NoError(t, err)
+
+		// 添加属性类
+		_, err = sqlite.AddAttributeClass(ac)
+		assert.NoError(t, err)
+
+		// 创建表
+		table, err := table.NewTable()
+		assert.NoError(t, err)
+		table.TableName = "test table"
+
+		// 添加表
+		_, err = sqlite.AddTable(table)
+		assert.NoError(t, err)
+
+		// 添加属性类到表
+		err = sqlite.AddAttributeClassToTable(table.TableId, ac.ClassId)
+		assert.NoError(t, err)
+
+		// 验证属性类是否添加到表
+		var exists bool
+		err = sqlite.db.QueryRow(
+			"SELECT EXISTS (SELECT 1 FROM table_to_attribute_classes WHERE table_id = ? AND class_id = ?)",
+			table.TableId, ac.ClassId,
+		).Scan(&exists)
+		assert.NoError(t, err)
+		assert.True(t, exists)
+
+		// 从表删除属性类
+		err = sqlite.RemoveAttributeClassFromTable(table.TableId, ac.ClassId)
+		assert.NoError(t, err)
+
+		// 验证属性类是否从表删除
+		err = sqlite.db.QueryRow(
+			"SELECT EXISTS (SELECT 1 FROM table_to_attribute_classes WHERE table_id = ? AND class_id = ?)",
+			table.TableId, ac.ClassId,
+		).Scan(&exists)
+		assert.NoError(t, err)
+		assert.False(t, exists)
+	})
+
+	// 测试对象属性操作
+	t.Run("Test Object Attribute Operations", func(t *testing.T) {
+		cleanupDatabase()
+		// 创建对象
+		objId, err := object.NewObjectId()
+		assert.NoError(t, err)
+		obj := &object.Object{ObjectId: objId}
+
+		// 添加对象
+		_, err = sqlite.AddObject(obj)
+		assert.NoError(t, err)
+
+		// 创建属性类
+		ac, err := attribute.NewAttributeClass("text")
+		assert.NoError(t, err)
+
+		// 添加属性类
+		_, err = sqlite.AddAttributeClass(ac)
+		assert.NoError(t, err)
+
+		// 添加属性到对象
+		attr, err := ac.NewAttribute()
+		assert.NoError(t, err)
+		err = sqlite.AddAttributeToObject(obj.ObjectId, attr)
+		assert.NoError(t, err)
+
+		// 验证属性是否添加到对象
+		var exists bool
+		err = sqlite.db.QueryRow(
+			"SELECT EXISTS (SELECT 1 FROM object_to_attribute_classes WHERE object_id = ? AND class_id = ?)",
+			obj.ObjectId, ac.ClassId,
+		).Scan(&exists)
+		assert.NoError(t, err)
+		assert.True(t, exists)
+
+		// 从对象删除属性类
+		err = sqlite.RemoveAttributeClassFromObject(obj.ObjectId, ac.ClassId)
+		assert.NoError(t, err)
+
+		// 验证属性类是否从对象删除
+		err = sqlite.db.QueryRow(
+			"SELECT EXISTS (SELECT 1 FROM object_to_attribute_classes WHERE object_id = ? AND class_id = ?)",
+			obj.ObjectId, ac.ClassId,
+		).Scan(&exists)
+		assert.NoError(t, err)
+		assert.False(t, exists)
+	})
+
+	// 测试列表操作
+	t.Run("Test List Operations", func(t *testing.T) {
+		cleanupDatabase()
+		// 创建多个属性类
+		ac1, err := attribute.NewAttributeClass("text")
+		assert.NoError(t, err)
+		// ac2, err := attribute.NewAttributeClass("number")
+		ac2, err := attribute.NewAttributeClass("text")
+		assert.NoError(t, err)
+
+		// 添加属性类
+		_, err = sqlite.AddAttributeClass(ac1)
+		assert.NoError(t, err)
+		_, err = sqlite.AddAttributeClass(ac2)
+		assert.NoError(t, err)
+
+		// 测试获取属性类列表
+		acList, err := sqlite.ListAttributeClasses()
+		assert.NoError(t, err)
+		assert.Len(t, acList, 2)
+
+		// 创建多个表
+		table1, err := table.NewTable()
+		assert.NoError(t, err)
+		table1.TableName = "table1"
+		table2, err := table.NewTable()
+		assert.NoError(t, err)
+		table2.TableName = "table2"
+
+		// 添加表
+		_, err = sqlite.AddTable(table1)
+		assert.NoError(t, err)
+		_, err = sqlite.AddTable(table2)
+		assert.NoError(t, err)
+
+		// 测试获取表列表
+		tableList, err := sqlite.ListTables()
+		assert.NoError(t, err)
+		assert.Len(t, tableList, 2)
+
+		// 创建对象
+		objId, err := object.NewObjectId()
+		assert.NoError(t, err)
+		obj := &object.Object{ObjectId: objId}
+
+		// 添加对象
+		_, err = sqlite.AddObject(obj)
+		assert.NoError(t, err)
+
+		// 添加属性到对象
+		attr, err := ac1.NewAttribute()
+		assert.NoError(t, err)
+		err = sqlite.AddAttributeToObject(obj.ObjectId, attr)
+		assert.NoError(t, err)
+
+		// 测试获取属性类关联的对象列表
+		objList, err := sqlite.ListAttributeClassObjects(ac1.ClassId)
+		assert.NoError(t, err)
+		assert.Len(t, objList, 1)
+
+		// 测试获取对象关联的属性列表
+		attrList, err := sqlite.ListObjectAttributes(obj.ObjectId)
+		assert.NoError(t, err)
+		assert.Len(t, attrList, 1)
+	})
 }
