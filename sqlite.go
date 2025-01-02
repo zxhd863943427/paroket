@@ -556,13 +556,17 @@ func (s *SqliteImpl) ListAttributeClassObjects(acid attribute.AttributeClassId) 
 // 获取对象关联的属性列表
 func (s *SqliteImpl) ListObjectAttributes(objId object.ObjectId) (attrStoreList []attribute.AttributeStore, err error) {
 	tx, err := s.db.Begin()
+	acField := attribute.AttributeClassField()
+	classIdFieldStr := attribute.AttributeClassFieldMap.ClassId()
 	queryAttrClassStmt := fmt.Sprintf(`
-    SELECT class_id, attribute_name, attribute_type, attribute_meta_info
+    SELECT %s
       FROM attribute_classes
-      WHERE class_id in (
-        SELECT class_id 
+      WHERE %s in (
+        SELECT %s 
         FROM object_to_attribute_classes 
-        WHERE object_id = ?)`)
+        WHERE object_id = ?)`,
+		acField, classIdFieldStr, classIdFieldStr,
+	)
 	attrClassList := []attribute.AttributeClass{}
 	classRows, err := tx.Query(queryAttrClassStmt, objId)
 	if err != nil {
@@ -571,7 +575,7 @@ func (s *SqliteImpl) ListObjectAttributes(objId object.ObjectId) (attrStoreList 
 	defer classRows.Close()
 	for classRows.Next() {
 		var attrClass = attribute.AttributeClass{}
-		err = classRows.Scan(&attrClass.ClassId, &attrClass.AttributeName, &attrClass.AttributeType, &attrClass.AttributeMetaInfo)
+		err = attrClass.ScanRows(classRows)
 		if err != nil {
 			return
 		}
