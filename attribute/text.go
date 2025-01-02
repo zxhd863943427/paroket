@@ -51,6 +51,15 @@ func (t *TextAttribute) GetClassId() AttributeClassId {
 	return t.classId
 }
 
+func (t *TextAttribute) SetValue(v map[string]interface{}) (err error) {
+	if str, ok := v["value"].(string); ok {
+		t.value = str
+	} else {
+		err = fmt.Errorf("set TextAttribute failed with error type: %T", v["value"])
+	}
+	return
+}
+
 func (t *TextAttribute) InsertData(tx *sql.Tx, objId object.ObjectId) (err error) {
 	insertAttributeStmt := fmt.Sprintf(`
 	INSERT INTO %s
@@ -84,6 +93,9 @@ func (t *TextAttribute) ScanRow(row *sql.Row) (err error) {
 	var objId uuid.UUID
 	var value string
 	err = row.Scan(&t.id, &objId, &date, &value)
+	if err != nil {
+		return
+	}
 	jsonData := TextJsonData{}
 	err = json.Unmarshal([]byte(value), &jsonData)
 	t.value = jsonData.Value
@@ -95,6 +107,9 @@ func (t *TextAttribute) ScanRows(rows *sql.Rows) (err error) {
 	var objId uuid.UUID
 	var value string
 	err = rows.Scan(&t.id, &objId, &date, &value)
+	if err != nil {
+		return
+	}
 	jsonData := TextJsonData{}
 	err = json.Unmarshal([]byte(value), &jsonData)
 	t.value = jsonData.Value

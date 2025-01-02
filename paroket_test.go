@@ -421,6 +421,69 @@ func TestSqliteImpl(t *testing.T) {
 		assert.False(t, exists)
 	})
 
+	// 测试TextAttribute的SetValue方法
+	t.Run("Test TextAttribute SetValue", func(t *testing.T) {
+		cleanupDatabase()
+
+		// 创建对象
+		objId, err := object.NewObjectId()
+		assert.NoError(t, err)
+		obj := &object.Object{ObjectId: objId}
+
+		// 添加对象
+		_, err = sqlite.AddObject(obj)
+		assert.NoError(t, err)
+
+		// 创建多个Text属性类
+		testValues := []struct {
+			className string
+			value     string
+		}{
+			{"text1", "value1"},
+			{"text2", "value2"},
+			{"text3", "value3"},
+		}
+
+		for _, test := range testValues {
+			// 创建属性类
+			ac, err := attribute.NewAttributeClass(attribute.AttributeTypeText)
+			ac.AttributeName = test.className
+			assert.NoError(t, err)
+
+			// 添加属性类
+			_, err = sqlite.AddAttributeClass(ac)
+			assert.NoError(t, err)
+
+			// 创建Text属性
+			attr, err := ac.NewAttribute()
+			assert.NoError(t, err)
+			textAttr := attr.(*attribute.TextAttribute)
+
+			// 设置值
+			err = textAttr.SetValue(map[string]interface{}{"value": test.value})
+			assert.NoError(t, err)
+
+			// 添加属性到对象
+			err = sqlite.AddAttributeToObject(obj.ObjectId, textAttr)
+			assert.NoError(t, err)
+
+			// 验证设置的值
+			expectedJSON := fmt.Sprintf(`{"type": "%s", "value": "%s"}`, attribute.AttributeTypeText, test.value)
+			assert.Equal(t, expectedJSON, textAttr.GetJSON())
+		}
+
+		// 使用ListObjectAttributes获取所有属性并验证
+		attrStoreList, err := sqlite.ListObjectAttributes(obj.ObjectId)
+		assert.NoError(t, err)
+		assert.Len(t, attrStoreList, len(testValues))
+
+		for i, attrStore := range attrStoreList {
+			// textAttr := attrStore.(*attribute.TextAttribute)
+			expectedJSON := fmt.Sprintf(`{"type": "%s", "value": "%s"}`, attribute.AttributeTypeText, testValues[i].value)
+			assert.Equal(t, expectedJSON, attrStore.Data)
+		}
+	})
+
 	// 测试列表操作
 	t.Run("Test List Operations", func(t *testing.T) {
 		cleanupDatabase()

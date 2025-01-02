@@ -194,6 +194,7 @@ type Attribute interface {
 	GetClassId() AttributeClassId                             //获取class ID
 	GetDataTableName() string                                 //获取数据表的名称
 	GetDataIndexName() string                                 //获取索引表的名称
+	SetValue(map[string]interface{}) error                    //设置值
 	InsertData(tx *sql.Tx, objId object.ObjectId) (err error) //插入数据和索引
 	UpdateData(tx *sql.Tx) (err error)                        //更新数据和索引
 	SearchData(tx *sql.Tx, objId object.ObjectId) (err error) //根据ObjectId搜索属性
