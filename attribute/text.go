@@ -154,12 +154,6 @@ func (t *TextAttribute) InsertData(tx *sql.Tx, objId object.ObjectId) (err error
 	return
 }
 
-func (t *TextAttribute) SearchData(tx *sql.Tx, objId object.ObjectId) (err error) {
-	queryStmt := fmt.Sprintf(`SELECT %s FROM %s WHERE object_id = ?`, fieldText, t.GetTableName())
-	err = t.ScanRow(tx.QueryRow(queryStmt, objId))
-	return
-}
-
 func (t *TextAttribute) ScanRow(row *sql.Row) (err error) {
 	var date time.Time
 	var objId uuid.UUID

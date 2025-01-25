@@ -142,14 +142,6 @@ func (ac *AttributeClass) ScanRow(row *sql.Row) (err error) {
 	return
 }
 
-func (ac *AttributeClass) ScanRows(rows *sql.Rows) (err error) {
-	if ac == nil {
-		return fmt.Errorf(`nil of AttributeClass`)
-	}
-	err = rows.Scan(&ac.ClassId, &ac.AttributeName, &ac.AttributeType, &ac.AttributeMetaInfo)
-	return
-}
-
 func (ac *AttributeClass) InsertClass(tx *sql.Tx, tableName string) (err error) {
 	addAttributeClassStmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s", tableName, AttributeClassField(), InsertField())
 	_, err = tx.Exec(addAttributeClassStmt, ac.ClassId, ac.AttributeName, ac.AttributeType, ac.AttributeMetaInfo)
@@ -198,7 +190,6 @@ type Attribute interface {
 	SetValue(map[string]interface{}) error                    //设置值
 	InsertData(tx *sql.Tx, objId object.ObjectId) (err error) //插入数据和索引
 	UpdateData(tx *sql.Tx) (err error)                        //更新数据和索引
-	SearchData(tx *sql.Tx, objId object.ObjectId) (err error) //根据ObjectId搜索属性
 	DeleteData(tx *sql.Tx) (err error)                        //删除数据和索引
 }
 
