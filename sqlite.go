@@ -148,17 +148,22 @@ func (s *SqliteImpl) RemoveObject(id object.ObjectId) (obj *object.Object, err e
 	if err != nil {
 		return
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
 
 	// 删除对象
 	deleteObjectStmt := "DELETE FROM objects WHERE object_id = ?"
 	if _, err = tx.Exec(deleteObjectStmt, id); err != nil {
-		tx.Rollback()
-		return
-	}
-
-	// 提交事务
-	if err = tx.Commit(); err != nil {
-		tx.Rollback()
 		return
 	}
 
@@ -171,19 +176,27 @@ func (s *SqliteImpl) RemoveObject(id object.ObjectId) (obj *object.Object, err e
 func (s *SqliteImpl) AddAttributeClass(ac *attribute.AttributeClass) (newAc *attribute.AttributeClass, err error) {
 	// 插入属性类到属性类表
 	tx, err := s.db.Begin()
+	if err != nil {
+		return
+	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
 
 	if err = ac.InsertClass(tx, "attribute_classes"); err != nil {
-		tx.Rollback()
 		return
 	}
 	// 新建属性属性ID——数据表
 	if err = ac.CreateDataTable(tx); err != nil {
-		tx.Rollback()
-		return
-	}
-
-	if err = tx.Commit(); err != nil {
-		tx.Rollback()
 		return
 	}
 
@@ -203,6 +216,18 @@ func (s *SqliteImpl) RemoveAttributeClass(acid attribute.AttributeClassId) (ac *
 	if err != nil {
 		return
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
 	ac, err = acid.QueryAttributeClass(tx)
 	if err != nil {
 		return
@@ -212,15 +237,9 @@ func (s *SqliteImpl) RemoveAttributeClass(acid attribute.AttributeClassId) (ac *
 	// 删除索引表和关联表
 	err = deleteAttributeIndexAndData(tx, ac)
 	if err != nil {
-		tx.Rollback()
 		return
 	}
 	if _, err = tx.Exec(deleteAttributeClassStmt, acid); err != nil {
-		tx.Rollback()
-		return
-	}
-	if err = tx.Commit(); err != nil {
-		tx.Rollback()
 		return
 	}
 	return
@@ -268,6 +287,18 @@ func (s *SqliteImpl) AddTable(t *table.Table) (nt *table.Table, err error) {
 	if err != nil {
 		return
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
 	// 添加到tables表中
 	addTableStmt := `INSERT INTO tables (table_id, table_name, meta_info, table_version) VALUES (?, ?, ?, ?)`
 
@@ -287,10 +318,6 @@ func (s *SqliteImpl) AddTable(t *table.Table) (nt *table.Table, err error) {
 	if _, err = tx.Exec(createDataTableStmt, t.TableId); err != nil {
 		return
 	}
-
-	if err = tx.Commit(); err != nil {
-		return
-	}
 	nt = &table.Table{
 		TableId:  t.TableId,
 		MetaInfo: t.MetaInfo,
@@ -306,6 +333,18 @@ func (s *SqliteImpl) RemoveTable(tid table.TableId) (t *table.Table, err error) 
 	if err != nil {
 		return
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
 
 	// 删除数据表
 	dropDataTableStmt := fmt.Sprintf(
@@ -328,9 +367,6 @@ func (s *SqliteImpl) RemoveTable(tid table.TableId) (t *table.Table, err error) 
 	if _, err = tx.Exec(deleteTableStmt, tid); err != nil {
 		return
 	}
-	if err = tx.Commit(); err != nil {
-		return
-	}
 	return
 }
 
@@ -341,6 +377,18 @@ func (s *SqliteImpl) UpdateTable(t *table.Table) (ot *table.Table, err error) {
 	if err != nil {
 		return
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
 	// 查询旧有数据表
 	selectStmt := `SELECT table_id, table_name, meta_info, table_version  FROM tables WHERE table_id = ?`
 	// 更新数据表
@@ -349,9 +397,6 @@ func (s *SqliteImpl) UpdateTable(t *table.Table) (ot *table.Table, err error) {
 		return
 	}
 	if _, err = tx.Exec(updateTableStmt, t.TableName, t.MetaInfo, t.Version, t.TableId); err != nil {
-		return
-	}
-	if err = tx.Commit(); err != nil {
 		return
 	}
 	return
@@ -364,6 +409,18 @@ func (s *SqliteImpl) AddObjectToTable(tid table.TableId, oid object.ObjectId) (e
 	if err != nil {
 		return
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
 	// 插入数据表
 	insertTableStmt := fmt.Sprintf(`INSERT INTO table_%s (object_id,update_time) VALUES (?, ?)`, tid)
 
@@ -371,14 +428,11 @@ func (s *SqliteImpl) AddObjectToTable(tid table.TableId, oid object.ObjectId) (e
 	insertObjToTableStmt := `INSERT INTO object_to_tables (object_id, table_id) VALUES (?, ?)`
 
 	if _, err = tx.Exec(insertTableStmt, oid, time.Now()); err != nil {
-		tx.Rollback()
 		return
 	}
 	if _, err = tx.Exec(insertObjToTableStmt, oid, tid); err != nil {
-		tx.Rollback()
 		return
 	}
-	err = tx.Commit()
 	return
 }
 
@@ -388,6 +442,18 @@ func (s *SqliteImpl) RemoveObjectFromTable(tid table.TableId, oid object.ObjectI
 	if err != nil {
 		return
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
 	// 删除数据表中的记录
 	deleteTableStmt := fmt.Sprintf(`DELETE FROM %s WHERE object_id = ?`, tid.GetTableName())
 	// 删除关联表的记录
@@ -398,8 +464,6 @@ func (s *SqliteImpl) RemoveObjectFromTable(tid table.TableId, oid object.ObjectI
 	if _, err = tx.Exec(deleteObjToTableStmt, oid, tid); err != nil {
 		return
 	}
-
-	err = tx.Commit()
 	return
 }
 
@@ -410,11 +474,22 @@ func (s *SqliteImpl) AddAttributeClassToTable(tid table.TableId, acid attribute.
 	if err != nil {
 		return
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
 	insertClassToTable := `INSERT INTO table_to_attribute_classes (table_id, class_id) VALUES (?, ?)`
 	if _, err = tx.Exec(insertClassToTable, tid, acid); err != nil {
 		return
 	}
-	err = tx.Commit()
 	return
 
 }
@@ -425,11 +500,22 @@ func (s *SqliteImpl) RemoveAttributeClassFromTable(tid table.TableId, acid attri
 	if err != nil {
 		return
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
 	deleteTableStmt := `DELETE FROM table_to_attribute_classes WHERE table_id = ? AND class_id = ?`
 	if _, err = tx.Exec(deleteTableStmt, tid, acid); err != nil {
 		return
 	}
-	err = tx.Commit()
 	return
 }
 
@@ -439,25 +525,29 @@ func (s *SqliteImpl) AddAttributeToObject(oid object.ObjectId, attr attribute.At
 	if err != nil {
 		return
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
 	// 插入到属性对象关联表
 	insertClassToObjStmt := `INSERT INTO object_to_attribute_classes (object_id, class_id) VALUES (?, ?)`
 
 	if _, err = tx.Exec(insertClassToObjStmt, oid, attr.GetClassId()); err != nil {
-		tx.Rollback()
 		return
 	}
 
 	// 插入到属性和索引表
 	if err = attr.InsertData(tx, oid); err != nil {
-		tx.Rollback()
 		return
 	}
-
-	if err = tx.Commit(); err != nil {
-		tx.Rollback()
-		return
-	}
-
 	return
 }
 
@@ -469,6 +559,18 @@ func (s *SqliteImpl) RemoveAttributeClassFromObject(oid object.ObjectId, acid at
 	if err != nil {
 		return
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
 	// 使用acid查找attributeClass
 	ac, err := acid.QueryAttributeClass(tx)
 	if err != nil {
@@ -477,26 +579,16 @@ func (s *SqliteImpl) RemoveAttributeClassFromObject(oid object.ObjectId, acid at
 	// 从关联表中删除
 	deleteAttrFromObjStmt := `DELETE FROM object_to_attribute_classes WHERE object_id = ? AND class_id = ?`
 	if _, err = tx.Exec(deleteAttrFromObjStmt, oid, acid); err != nil {
-		tx.Rollback()
 		return
 	}
 	// 查找对应的属性
-	attr, err := ac.NewAttribute()
-	if err != nil {
-		return
-	}
-	err = attr.SearchData(tx, oid)
+	attr, err := ac.SearchByID(tx, oid)
 	if err != nil {
 		return
 	}
 
 	// 删除属性
 	if err = attr.DeleteData(tx); err != nil {
-		tx.Rollback()
-		return
-	}
-	if err = tx.Commit(); err != nil {
-		tx.Rollback()
 		return
 	}
 	return
@@ -562,31 +654,52 @@ func (s *SqliteImpl) ListAttributeClassObjects(acid attribute.AttributeClassId) 
 // 获取对象关联的属性列表
 func (s *SqliteImpl) ListObjectAttributes(objId object.ObjectId) (attrStoreList []attribute.AttributeStore, err error) {
 	tx, err := s.db.Begin()
-	acField := attribute.AttributeClassField()
-	classIdFieldStr := attribute.AttributeClassFieldMap.ClassId()
-	queryAttrClassStmt := fmt.Sprintf(`
-    SELECT %s
-      FROM attribute_classes
-      WHERE %s in (
-        SELECT %s 
-        FROM object_to_attribute_classes 
-        WHERE object_id = ?)`,
-		acField, classIdFieldStr, classIdFieldStr,
-	)
-	attrClassList := []attribute.AttributeClass{}
-	classRows, err := tx.Query(queryAttrClassStmt, objId)
 	if err != nil {
 		return
 	}
-	defer classRows.Close()
-	for classRows.Next() {
-		var attrClass = attribute.AttributeClass{}
-		err = attrClass.ScanRows(classRows)
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback()
+			panic(p) // 重新抛出panic
+		} else if err != nil {
+			tx.Rollback()
+		} else {
+			if err = tx.Commit(); err != nil {
+				tx.Rollback()
+			}
+		}
+	}()
+	classIdFieldStr := attribute.AttributeClassFieldMap.ClassId()
+	queryAttrClassStmt := fmt.Sprintf(`
+		SELECT %s 
+		FROM object_to_attribute_classes 
+		WHERE object_id = ?`,
+		classIdFieldStr,
+	)
+	attrClassList := []*attribute.AttributeClass{}
+	cidList := []attribute.AttributeClassId{}
+	classIdRows, err := tx.Query(queryAttrClassStmt, objId)
+	if err != nil {
+		return
+	}
+	defer classIdRows.Close()
+	for classIdRows.Next() {
+		var cid attribute.AttributeClassId
+		if err = classIdRows.Scan(&cid); err != nil {
+			return
+		}
+		cidList = append(cidList, cid)
+	}
+
+	for _, cid := range cidList {
+		var attrClass *attribute.AttributeClass
+		attrClass, err = cid.QueryAttributeClass(tx)
 		if err != nil {
 			return
 		}
 		attrClassList = append(attrClassList, attrClass)
 	}
+
 	for _, attrClass := range attrClassList {
 		attributeStore := attribute.AttributeStore{
 			AttributeType: attrClass.AttributeType,
@@ -603,7 +716,6 @@ func (s *SqliteImpl) ListObjectAttributes(objId object.ObjectId) (attrStoreList 
 		}
 		attrStoreList = append(attrStoreList, attributeStore)
 	}
-	err = tx.Commit()
 	return
 }
 
@@ -619,8 +731,8 @@ func (s *SqliteImpl) GetQuery(tid table.TableId) (q query.Query, err error) {
 	if err != nil {
 		return
 	}
-	acStrList := []string{}
 	defer tx.Commit()
+	acStrList := []string{}
 	for rows.Next() {
 		var acid attribute.AttributeClassId
 		if err = rows.Scan(&acid); err != nil {

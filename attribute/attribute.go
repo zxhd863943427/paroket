@@ -36,13 +36,6 @@ func (id AttributeId) Value() (driver.Value, error) {
 	return uuid.UUID(id).Value()
 }
 
-type AttributeClass struct {
-	ClassId           AttributeClassId
-	AttributeName     string
-	AttributeType     string
-	AttributeMetaInfo utils.JSONMap
-}
-
 type attributeClassFieldMap struct{}
 
 func (am attributeClassFieldMap) ClassId() string           { return `class_id` }
@@ -76,45 +69,69 @@ func NewAttributeId() (AttributeId, error) {
 	return AttributeId(uuid), err
 }
 
-func getTableName(at string, cid AttributeClassId) string {
-	return fmt.Sprintf(
-		`%s_%s`,
-		at,
-		cid.String())
+// AttributeClass的具体实现接口
+type AttributeClassImpl interface {
+	NewAttribute() (attr Attribute, err error)                       //创建Attrbute
+	SearchByID(tx *sql.Tx, objId object.ObjectId) (Attribute, error) //根据ObjectId搜索属性
+	CreateDataTableStmt() (dataTable, indexTable, execIndex string)  // 获取创建data的语句
+	GetDataTableName() string                                        //获取数据表名称
+	GetDataIndexName() string                                        //获取索引表名称
+	BuildQuery(v map[string]interface{}) (string, error)             //构建查询
+	BuildSort(v map[string]interface{}) (string, error)              //构建排序
 }
 
-func getIndexName(at string, cid AttributeClassId) string {
-	return fmt.Sprintf(
-		`%s_%s_idx`,
-		at,
-		cid.String())
+// 公用实现
+type AttributeClass struct {
+	ClassId           AttributeClassId
+	AttributeName     string
+	AttributeType     string
+	AttributeMetaInfo utils.JSONMap
+	Impl              AttributeClassImpl
 }
 
-func (ac *AttributeClass) GetDataTableName() string {
-	return getTableName(ac.AttributeType, ac.ClassId)
-}
-
-func (ac *AttributeClass) GetDataIndexName() string {
-	return getIndexName(ac.AttributeType, ac.ClassId)
-}
-
-func (ac *AttributeClass) NewAttribute() (attr Attribute, err error) {
-	id, err := uuid.NewV7()
+func NewAttributeClass(attributbuteType string) (ac *AttributeClass, err error) {
+	uuid, err := uuid.NewV7()
 	if err != nil {
 		return
 	}
-	switch ac.AttributeType {
+	cid := AttributeClassId(uuid)
+	switch attributbuteType {
 	case AttributeTypeText:
-		attr = &TextAttribute{
-			id:      AttributeId(id),
-			classId: ac.ClassId,
-			value:   "",
+		ac = &AttributeClass{
+			ClassId:           cid,
+			AttributeName:     "untitled",
+			AttributeType:     AttributeTypeText,
+			AttributeMetaInfo: map[string]interface{}{},
 		}
+		ac.Impl = &TextAttributeClass{AttributeClass: ac}
 	default:
-		err = fmt.Errorf("un support type")
+		err = fmt.Errorf("unsupport attribute type of %s", attributbuteType)
+		return
 	}
+	// ac = &AttributeClass{
+	// 	ClassId:           AttributeClassId(uuid),
+	// 	AttributeName:     "untitled",
+	// 	AttributeType:     attributbuteType,
+	// 	AttributeMetaInfo: map[string]interface{}{},
+	// }
 
 	return
+}
+
+func (ac *AttributeClass) SearchByID(tx *sql.Tx, objId object.ObjectId) (attr Attribute, err error) {
+	return ac.Impl.SearchByID(tx, objId)
+}
+
+func (ac *AttributeClass) GetDataTableName() string {
+	return ac.Impl.GetDataTableName()
+}
+
+func (ac *AttributeClass) GetDataIndexName() string {
+	return ac.Impl.GetDataIndexName()
+}
+
+func (ac *AttributeClass) NewAttribute() (attr Attribute, err error) {
+	return ac.Impl.NewAttribute()
 }
 
 func (ac *AttributeClass) ScanRow(row *sql.Row) (err error) {
@@ -140,13 +157,7 @@ func (ac *AttributeClass) InsertClass(tx *sql.Tx, tableName string) (err error) 
 }
 
 func (ac *AttributeClass) CreateDataTable(tx *sql.Tx) (err error) {
-	var dataStmt, indexStmt, execIdxStmt string
-	switch ac.AttributeType {
-	case AttributeTypeText:
-		dataStmt, indexStmt, execIdxStmt = createTextTable(ac.GetDataTableName(), ac.GetDataIndexName())
-	default:
-		err = fmt.Errorf("un support attribute type of %s", ac.AttributeType)
-	}
+	dataStmt, indexStmt, execIdxStmt := ac.Impl.CreateDataTableStmt()
 	stmts := []string{dataStmt, indexStmt, execIdxStmt}
 	for _, stmt := range stmts {
 		_, err = tx.Exec(stmt)
@@ -169,21 +180,13 @@ func (acid AttributeClassId) QueryAttributeClass(tx *sql.Tx) (ac *AttributeClass
 	if err = ac.ScanRow(tx.QueryRow(queryAtttributeClassStmt, acid)); err != nil {
 		return
 	}
-	return
-}
-
-func NewAttributeClass(attributbuteType string) (ac *AttributeClass, err error) {
-	uuid, err := uuid.NewV7()
-	if err != nil {
+	switch ac.AttributeType {
+	case AttributeTypeText:
+		ac.Impl = &TextAttributeClass{AttributeClass: ac}
+	default:
+		err = fmt.Errorf("unsupport type from database : %s", ac.AttributeType)
 		return
 	}
-	ac = &AttributeClass{
-		ClassId:           AttributeClassId(uuid),
-		AttributeName:     "untitled",
-		AttributeType:     attributbuteType,
-		AttributeMetaInfo: map[string]interface{}{},
-	}
-
 	return
 }
 
@@ -192,8 +195,6 @@ type Attribute interface {
 	GetJSON() string                                          //获取值的JSON表示
 	GetType() string                                          //获取class ID
 	GetClassId() AttributeClassId                             //获取class ID
-	GetDataTableName() string                                 //获取数据表的名称
-	GetDataIndexName() string                                 //获取索引表的名称
 	SetValue(map[string]interface{}) error                    //设置值
 	InsertData(tx *sql.Tx, objId object.ObjectId) (err error) //插入数据和索引
 	UpdateData(tx *sql.Tx) (err error)                        //更新数据和索引
