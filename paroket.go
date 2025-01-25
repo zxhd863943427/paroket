@@ -3,6 +3,7 @@ package paroket
 import (
 	"paroket/attribute"
 	"paroket/object"
+	"paroket/query"
 	"paroket/table"
 )
 
@@ -55,4 +56,13 @@ type Paroket interface {
 	ListAttributeClassObjects(attribute.AttributeClassId) ([]object.Object, error)
 	// 获取对象关联的属性列表
 	ListObjectAttributes(object.ObjectId) ([]attribute.AttributeStore, error)
+
+	// 生成QUery
+	GetQuery(table.TableId) (query.Query, error)
+
+	// 获取table具体数据
+	Query(query.Query) ([]table.TableValue, error)
+
+	// 关闭数据库
+	Close() error
 }

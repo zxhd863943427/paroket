@@ -9,6 +9,7 @@ import (
 
 	"paroket/attribute"
 	"paroket/object"
+	"paroket/query"
 	"paroket/table"
 )
 
@@ -26,6 +27,11 @@ func NewSqliteImpl() (s *SqliteImpl) {
 	s = &SqliteImpl{
 		db: nil,
 	}
+	return
+}
+
+func (s *SqliteImpl) GetDB() (db *sql.DB) {
+	db = s.db
 	return
 }
 
@@ -267,12 +273,12 @@ func (s *SqliteImpl) AddTable(t *table.Table) (nt *table.Table, err error) {
 
 	// 创建table所对应的数据表
 	createDataTableStmt := fmt.Sprintf(
-		`CREATE TABLE table_%s (
+		`CREATE TABLE %s (
 		object_id BLOB PRIMARY KEY, 
 		update_time DATETIME,
 		FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE
 		)`,
-		t.TableId.String(),
+		t.TableId.GetTableName(),
 	)
 
 	if _, err = tx.Exec(addTableStmt, t.TableId, t.TableName, t.MetaInfo, t.Version); err != nil {
@@ -303,8 +309,8 @@ func (s *SqliteImpl) RemoveTable(tid table.TableId) (t *table.Table, err error) 
 
 	// 删除数据表
 	dropDataTableStmt := fmt.Sprintf(
-		`DROP TABLE table_%s`,
-		tid.String(),
+		`DROP TABLE %s`,
+		tid.GetTableName(),
 	)
 	// 查询tables表中的记录
 	selectStmt := `SELECT table_id, table_name, meta_info, table_version  FROM tables WHERE table_id = ?`
@@ -383,7 +389,7 @@ func (s *SqliteImpl) RemoveObjectFromTable(tid table.TableId, oid object.ObjectI
 		return
 	}
 	// 删除数据表中的记录
-	deleteTableStmt := fmt.Sprintf(`DELETE FROM table_%s WHERE object_id = ?`, tid.String())
+	deleteTableStmt := fmt.Sprintf(`DELETE FROM %s WHERE object_id = ?`, tid.GetTableName())
 	// 删除关联表的记录
 	deleteObjToTableStmt := `DELETE FROM object_to_tables WHERE object_id = ? AND table_id = ?`
 	if _, err = tx.Exec(deleteTableStmt, oid); err != nil {
@@ -599,4 +605,79 @@ func (s *SqliteImpl) ListObjectAttributes(objId object.ObjectId) (attrStoreList 
 	}
 	err = tx.Commit()
 	return
+}
+
+// 生成QUery
+func (s *SqliteImpl) GetQuery(tid table.TableId) (q query.Query, err error) {
+	q = *query.NewQueryBuilder(tid)
+	tableAcStmt := "SELECT class_id FROM table_to_attribute_classes WHERE table_id = ?"
+	rows, err := s.db.Query(tableAcStmt, tid)
+	if err != nil {
+		return
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return
+	}
+	acStrList := []string{}
+	defer tx.Commit()
+	for rows.Next() {
+		var acid attribute.AttributeClassId
+		if err = rows.Scan(&acid); err != nil {
+			return
+		}
+		var ac *attribute.AttributeClass
+		ac, err = acid.QueryAttributeClass(tx)
+		if err != nil {
+			return
+		}
+		acStrList = append(acStrList, ac.GetDataTableName())
+	}
+	q.AddFields(acStrList)
+	return
+}
+
+func (s *SqliteImpl) Query(q query.Query) (data []table.TableValue, err error) {
+	data = []table.TableValue{}
+	stmt, err := q.Build()
+	if err != nil {
+		return
+	}
+	rows, err := s.db.Query(stmt)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	colums, err := rows.Columns()
+	if err != nil {
+		return
+	}
+	dataLen := len(colums) - 1
+	for rows.Next() {
+		value := table.TableValue{
+			ObjectId: object.ObjectId{},
+			Values:   map[string]string{},
+		}
+		columsValue := make([]string, dataLen)
+		columsValuePtr := make([]interface{}, len(colums))
+		columsValuePtr[0] = &value.ObjectId
+		for idx := range columsValue {
+			columsValuePtr[idx+1] = &columsValue[idx]
+		}
+		if err = rows.Scan(columsValuePtr...); err != nil {
+			return
+		}
+		for idx, columName := range colums {
+			if idx == 0 {
+				continue
+			}
+			value.Values[columName] = columsValue[idx-1]
+		}
+		data = append(data, value)
+	}
+	return
+}
+
+func (s *SqliteImpl) Close() (err error) {
+	return s.db.Close()
 }

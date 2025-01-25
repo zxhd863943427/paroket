@@ -2,6 +2,8 @@ package table
 
 import (
 	"database/sql/driver"
+	"fmt"
+	"paroket/object"
 	"paroket/utils"
 	"strings"
 
@@ -37,6 +39,12 @@ func (tid TableId) String() string {
 	return strings.ReplaceAll(uuid.String(), "-", "_")
 }
 
+func (tid TableId) GetTableName() string {
+	uuid := uuid.UUID(tid)
+	str := strings.ReplaceAll(uuid.String(), "-", "_")
+	return fmt.Sprintf("table_%s", str)
+}
+
 func NewTable() (t *Table, err error) {
 	uuid, err := uuid.NewV7()
 	t = &Table{
@@ -45,4 +53,9 @@ func NewTable() (t *Table, err error) {
 		Version:  0,
 	}
 	return
+}
+
+type TableValue struct {
+	ObjectId object.ObjectId
+	Values   map[string]string
 }
