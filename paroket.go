@@ -58,10 +58,10 @@ type Paroket interface {
 	ListObjectAttributes(object.ObjectId) ([]attribute.AttributeStore, error)
 
 	// 生成QUery
-	GetQuery(table.TableId) (query.Query, error)
+	GetQuery(table.TableId) (*query.Query, error)
 
 	// 获取table具体数据
-	Query(query.Query) ([]table.TableValue, error)
+	Query(*query.Query) ([]table.TableValue, error)
 
 	// 关闭数据库
 	Close() error

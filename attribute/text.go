@@ -46,7 +46,7 @@ func (tc *TextAttributeClass) CreateDataTableStmt() (dataTable string, indexTabl
 	dataTable = fmt.Sprintf(
 		`CREATE TABLE %s (
 		attribute_id BLOB PRIMARY KEY,
-		object_id BLOB NOT NULL,
+		object_id BLOB UNIQUE NOT NULL,
 		update_time DATETIME NOT NULL,
 		data JSONB NOT NULL,
 		FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE
@@ -57,7 +57,7 @@ func (tc *TextAttributeClass) CreateDataTableStmt() (dataTable string, indexTabl
 		idx TEXT NOT NULL,
 		FOREIGN KEY (attribute_id) REFERENCES %s(attribute_id) ON DELETE CASCADE
 		)`, indexTableName, dataTableName)
-	execIndex = fmt.Sprintf(`CREATE INDEX idx_%s ON %s(idx)`, indexTableName, indexTableName)
+	execIndex = fmt.Sprintf(`CREATE INDEX idx_%s ON %s(idx, attribute_id)`, indexTableName, indexTableName)
 	return
 }
 
@@ -84,14 +84,83 @@ func (tc *TextAttributeClass) GetDataIndexName() string {
 }
 
 func (tc *TextAttributeClass) BuildQuery(v map[string]interface{}) (stmt string, err error) {
-	//TODO
-	err = fmt.Errorf("Unimpl")
+	if _, ok := v["op"].(string); !ok {
+		err = fmt.Errorf("invaild query value:%s", v)
+		return
+	}
+	if _, ok := v["value"].(string); !ok {
+		err = fmt.Errorf("invaild query value:%s", v)
+		return
+	}
+	op := v["op"].(string)
+	value := v["value"].(string)
+	switch op {
+	case "like":
+		stmt = fmt.Sprintf(
+			`( %s.attribute_id in ( 
+			SELECT attribute_id FROM %s 
+			WHERE %s.idx LIKE '%s%%' OR %s.idx LIKE '%%%s%%'
+			))`,
+			tc.GetDataTableName(),
+			tc.GetDataIndexName(),
+			tc.GetDataIndexName(),
+			value,
+			tc.GetDataIndexName(),
+			value,
+		)
+	case "unlike":
+		stmt = fmt.Sprintf(
+			`(%s.attribute_id in ( 
+			SELECT attribute_id FROM %s 
+			WHERE %s.idx NOT LIKE '%%%s%%'
+			))`,
+			tc.GetDataTableName(),
+			tc.GetDataIndexName(),
+			tc.GetDataIndexName(),
+			value,
+		)
+	case "equal":
+		stmt = fmt.Sprintf(
+			`(%s.attribute_id in ( 
+			SELECT attribute_id FROM %s 
+			WHERE %s.idx == '%s'
+			))`,
+			tc.GetDataTableName(),
+			tc.GetDataIndexName(),
+			tc.GetDataIndexName(),
+			value,
+		)
+	case "unequal":
+		stmt = fmt.Sprintf(
+			`(%s.attribute_id in ( 
+			SELECT attribute_id FROM %s 
+			WHERE %s.idx != '%s'
+			))`,
+			tc.GetDataTableName(),
+			tc.GetDataIndexName(),
+			tc.GetDataIndexName(),
+			value,
+		)
+	default:
+		err = fmt.Errorf("unsupport op:%s", op)
+	}
 	return
 }
 
 func (tc *TextAttributeClass) BuildSort(v map[string]interface{}) (stmt string, err error) {
 	//TODO
-	err = fmt.Errorf("Unimpl")
+	if _, ok := v["mode"].(string); !ok {
+		err = fmt.Errorf("invaild sort value:%s", v)
+		return
+	}
+	mode := v["mode"].(string)
+	switch mode {
+	case "asc":
+		stmt = fmt.Sprintf("%s.data -> '$.value' ASC", tc.GetDataTableName())
+	case "desc":
+		stmt = fmt.Sprintf("%s.data -> '$.value' DESC", tc.GetDataTableName())
+
+	}
 	return
 }
 

@@ -14,8 +14,15 @@ type SortField interface {
 	BuildSort(v map[string]interface{}) (string, error)
 }
 
+type QueryMode string
+
+const (
+	TableMode QueryMode = "table"
+)
+
 type Query struct {
 	tableId table.TableId
+	mode    QueryMode
 	fields  []string
 	query   *QueryNode
 	sort    []SortNode
@@ -100,7 +107,7 @@ func (qb *Query) buildSort() (stmt string, err error) {
 		}
 
 		buffer.WriteString(fmt.Sprintf(" %s ", s))
-		if idx != sortLen {
+		if idx != sortLen-1 {
 			buffer.WriteString(",")
 		}
 	}

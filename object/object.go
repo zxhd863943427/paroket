@@ -17,6 +17,14 @@ func NewObjectId() (ObjectId, error) {
 	return ObjectId(uuid), err
 }
 
+func NewObject() (obj *Object, err error) {
+	uuid, err := uuid.NewV7()
+	obj = &Object{
+		ObjectId: ObjectId(uuid),
+	}
+	return
+}
+
 // Scan 实现 sql.Scanner 接口
 func (id *ObjectId) Scan(value interface{}) error {
 	return (*uuid.UUID)(id).Scan(value)

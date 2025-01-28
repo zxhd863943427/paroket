@@ -720,8 +720,8 @@ func (s *SqliteImpl) ListObjectAttributes(objId object.ObjectId) (attrStoreList 
 }
 
 // 生成QUery
-func (s *SqliteImpl) GetQuery(tid table.TableId) (q query.Query, err error) {
-	q = *query.NewQueryBuilder(tid)
+func (s *SqliteImpl) GetQuery(tid table.TableId) (q *query.Query, err error) {
+	q = query.NewQueryBuilder(tid)
 	tableAcStmt := "SELECT class_id FROM table_to_attribute_classes WHERE table_id = ?"
 	rows, err := s.db.Query(tableAcStmt, tid)
 	if err != nil {
@@ -749,7 +749,7 @@ func (s *SqliteImpl) GetQuery(tid table.TableId) (q query.Query, err error) {
 	return
 }
 
-func (s *SqliteImpl) Query(q query.Query) (data []table.TableValue, err error) {
+func (s *SqliteImpl) Query(q *query.Query) (data []table.TableValue, err error) {
 	data = []table.TableValue{}
 	stmt, err := q.Build()
 	if err != nil {
