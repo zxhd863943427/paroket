@@ -59,3 +59,7 @@ type TableValue struct {
 	ObjectId object.ObjectId
 	Values   map[string]string
 }
+
+func (tid TableId) CreateMaterialized() {
+	//TODO
+}
