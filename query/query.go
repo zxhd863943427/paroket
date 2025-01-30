@@ -17,7 +17,9 @@ type SortField interface {
 type QueryMode string
 
 const (
-	TableMode QueryMode = "table"
+	TableMode  QueryMode = "table"
+	ObjectMode QueryMode = "object"
+	attribute  QueryMode = "attribute"
 )
 
 type Query struct {
@@ -59,6 +61,16 @@ func NewQueryBuilder(tid table.TableId) *Query {
 		limit:   50,
 		offset:  0,
 	}
+}
+
+func (qb *Query) Offset(offset int) *Query {
+	qb.offset = offset
+	return qb
+}
+
+func (qb *Query) Limit(limit int) *Query {
+	qb.limit = limit
+	return qb
 }
 
 func (qb *Query) AddFields(flist []string) *Query {

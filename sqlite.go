@@ -141,6 +141,16 @@ func (s *SqliteImpl) AddObject(o *object.Object) (obj *object.Object, err error)
 	return
 }
 
+// 添加对象
+func (s *SqliteImpl) AddObjectWithTx(o *object.Object, tx *sql.Tx) (obj *object.Object, err error) {
+	addObjectStmt := "INSERT INTO objects (object_id) VALUES (?)"
+	if _, err = tx.Exec(addObjectStmt, o.ObjectId); err != nil {
+		return
+	}
+	obj = o
+	return
+}
+
 // 删除对象
 func (s *SqliteImpl) RemoveObject(id object.ObjectId) (obj *object.Object, err error) {
 	// 开启事务
@@ -436,6 +446,24 @@ func (s *SqliteImpl) AddObjectToTable(tid table.TableId, oid object.ObjectId) (e
 	return
 }
 
+// 添加对象到表
+func (s *SqliteImpl) AddObjectToTableWithTx(tid table.TableId, oid object.ObjectId, tx *sql.Tx) (err error) {
+	// tx, err := s.db.Begin()
+	// 插入数据表
+	insertTableStmt := fmt.Sprintf(`INSERT INTO table_%s (object_id,update_time) VALUES (?, ?)`, tid)
+
+	// 插入对象与表格的关联表
+	insertObjToTableStmt := `INSERT INTO object_to_tables (object_id, table_id) VALUES (?, ?)`
+	if _, err = tx.Exec(insertTableStmt, oid, time.Now()); err != nil {
+		return
+	}
+	if _, err = tx.Exec(insertObjToTableStmt, oid, tid); err != nil {
+		return
+	}
+
+	return
+}
+
 // 从表删除对象
 func (s *SqliteImpl) RemoveObjectFromTable(tid table.TableId, oid object.ObjectId) (err error) {
 	tx, err := s.db.Begin()
@@ -537,6 +565,22 @@ func (s *SqliteImpl) AddAttributeToObject(oid object.ObjectId, attr attribute.At
 			}
 		}
 	}()
+	// 插入到属性对象关联表
+	insertClassToObjStmt := `INSERT INTO object_to_attribute_classes (object_id, class_id) VALUES (?, ?)`
+
+	if _, err = tx.Exec(insertClassToObjStmt, oid, attr.GetClassId()); err != nil {
+		return
+	}
+
+	// 插入到属性和索引表
+	if err = attr.InsertData(tx, oid); err != nil {
+		return
+	}
+	return
+}
+
+func (s *SqliteImpl) AddAttributeToObjectWithTx(oid object.ObjectId, attr attribute.Attribute, tx *sql.Tx) (err error) {
+
 	// 插入到属性对象关联表
 	insertClassToObjStmt := `INSERT INTO object_to_attribute_classes (object_id, class_id) VALUES (?, ?)`
 

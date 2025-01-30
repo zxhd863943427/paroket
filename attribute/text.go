@@ -57,7 +57,15 @@ func (tc *TextAttributeClass) CreateDataTableStmt() (dataTable string, indexTabl
 		idx TEXT NOT NULL,
 		FOREIGN KEY (attribute_id) REFERENCES %s(attribute_id) ON DELETE CASCADE
 		)`, indexTableName, dataTableName)
-	execIndex = fmt.Sprintf(`CREATE INDEX idx_%s ON %s(idx, attribute_id)`, indexTableName, indexTableName)
+	execIndex = fmt.Sprintf(`
+	CREATE INDEX idx_%s ON %s(idx, attribute_id);
+	CREATE INDEX idx_%s_data ON %s(object_id, data);
+	CREATE INDEX idx_%s_data_sort ON %s(data  -> '$.value');
+	`,
+		indexTableName, indexTableName,
+		dataTableName, dataTableName,
+		dataTableName, dataTableName,
+	)
 	return
 }
 
@@ -71,7 +79,7 @@ func (tc *TextAttributeClass) SearchByID(tx *sql.Tx, objId object.ObjectId) (att
 
 func (tc *TextAttributeClass) GetDataTableName() string {
 	return fmt.Sprintf(
-		"`%s_%s`",
+		"%s_%s",
 		AttributeTypeText,
 		tc.AttributeClass.ClassId.String())
 }

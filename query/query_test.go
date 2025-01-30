@@ -229,10 +229,10 @@ func TestQuery(t *testing.T) {
 	})
 	t.Run("Test basic filter query", func(t *testing.T) {
 		cleanupDatabase()
-		testObjNum := 5000
-		testClassNum := 50
+		testObjNum := 10 * 100 * 100
+		testClassNum := 20
 
-		attrType := 999
+		attrType := 9999
 		// 创建表
 		ta, err := table.NewTable()
 		assert.NoError(t, err)
@@ -266,7 +266,7 @@ func TestQuery(t *testing.T) {
 			tempValue := []*attribute.Attribute{}
 			for i := 0; i < testObjNum; i++ {
 				var attr attribute.Attribute
-				tempAcValue := fmt.Sprintf("%s_%03d", class.AttributeName, (i+idx)%attrType)
+				tempAcValue := fmt.Sprintf("%05d_%s", (i+idx)%attrType, class.AttributeName)
 				attr, err = class.NewAttribute()
 				assert.NoError(t, err)
 				attr.SetValue(map[string]interface{}{"value": tempAcValue})
@@ -275,29 +275,49 @@ func TestQuery(t *testing.T) {
 			testValues = append(testValues, tempValue)
 		}
 
-		// 创建多个对象并添加属性
-		ticker.start(fmt.Sprintf("batch insert attr %d", testClassNum*testObjNum))
+		// 创建多个对象并添加到表
+		ticker.start(fmt.Sprintf("batch insert obj %d", testObjNum))
+		tx, err := sqlite.GetDB().Begin()
+		assert.NoError(t, err)
+
 		testObjlist := []*object.Object{}
 		for i := 0; i < testObjNum; i++ {
 			var obj *object.Object
 			obj, err = object.NewObject()
 			assert.NoError(t, err)
 
-			_, err = sqlite.AddObject(obj)
+			_, err = sqlite.AddObjectWithTx(obj, tx)
 			assert.NoError(t, err)
 
 			//添加对象到表
-			sqlite.AddObjectToTable(ta.TableId, obj.ObjectId)
+			sqlite.AddObjectToTableWithTx(ta.TableId, obj.ObjectId, tx)
 			testObjlist = append(testObjlist, obj)
 
+		}
+		err = tx.Commit()
+		assert.NoError(t, err)
+
+		ticker.log(fmt.Sprintf("batch insert obj %d", testObjNum))
+
+		// 把属性添加到对象
+		ticker.start(fmt.Sprintf("batch insert obj attr %d", testObjNum*testClassNum))
+		ticker.start("insert attr")
+		tx, err = sqlite.GetDB().Begin()
+		assert.NoError(t, err)
+		for i, obj := range testObjlist {
+			if i%(testObjNum/100) == 0 {
+				ticker.log("insert attr")
+				fmt.Println("insert ", i, " obj attr now")
+			}
 			for j := 0; j < testClassNum; j++ {
-				err = sqlite.AddAttributeToObject(obj.ObjectId, *testValues[j][i])
+				err = sqlite.AddAttributeToObjectWithTx(obj.ObjectId, *testValues[j][i], tx)
 				assert.NoError(t, err)
 
 			}
-
 		}
-		ticker.log(fmt.Sprintf("batch insert attr %d", testClassNum*testObjNum))
+		err = tx.Commit()
+		assert.NoError(t, err)
+		ticker.log(fmt.Sprintf("batch insert obj attr %d", testObjNum*testClassNum))
 
 		// 使用query查询属性
 		q, err := sqlite.GetQuery(ta.TableId)
@@ -309,7 +329,7 @@ func TestQuery(t *testing.T) {
 				{
 					Type:       query.Operation,
 					QueryField: testClasses[0].Impl,
-					QueryValue: map[string]interface{}{"op": "like", "value": "text1_05"},
+					QueryValue: map[string]interface{}{"op": "like", "value": "05"},
 				},
 			},
 		}
@@ -320,6 +340,7 @@ func TestQuery(t *testing.T) {
 			},
 		}
 		q = q.AddQuery(qNode).AddSort(sNodeList)
+		q = q.Offset(50)
 		stmt, err := q.Build()
 		assert.NoError(t, err)
 		fmt.Println(stmt)
