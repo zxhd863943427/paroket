@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"paroket/object"
 	"paroket/utils"
-	"strings"
 
 	"github.com/rs/xid"
 )
@@ -36,12 +35,12 @@ type Table struct {
 
 func (tid TableId) String() string {
 	guid := xid.ID(tid)
-	return strings.ReplaceAll(guid.String(), "-", "_")
+	return guid.String()
 }
 
 func (tid TableId) GetTableName() string {
 	guid := xid.ID(tid)
-	str := strings.ReplaceAll(guid.String(), "-", "_")
+	str := guid.String()
 	return fmt.Sprintf("table_%s", str)
 }
 
