@@ -7,7 +7,7 @@ import (
 	"paroket/object"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 )
 
 type TextAttributeClass struct {
@@ -28,12 +28,12 @@ type TextJsonData struct {
 const fieldText = ` attribute_id, object_id, update_time, data `
 
 func (tc *TextAttributeClass) NewAttribute() (attr Attribute, err error) {
-	id, err := uuid.NewV7()
+	id, err := NewAttributeId()
 	if err != nil {
 		return
 	}
 	attr = &TextAttribute{
-		id:      AttributeId(id),
+		id:      id,
 		classId: tc.AttributeClass.ClassId,
 		value:   "",
 	}
@@ -184,6 +184,10 @@ func (t *TextAttribute) GetJSON() string {
 	return fmt.Sprintf(`{"type": "%s", "value": "%s"}`, AttributeTypeText, t.value)
 }
 
+func (t *TextAttribute) String() string {
+	return t.value
+}
+
 func (t *TextAttribute) GetType() string {
 	return AttributeTypeText
 }
@@ -233,7 +237,7 @@ func (t *TextAttribute) InsertData(tx *sql.Tx, objId object.ObjectId) (err error
 
 func (t *TextAttribute) ScanRow(row *sql.Row) (err error) {
 	var date time.Time
-	var objId uuid.UUID
+	var objId xid.ID
 	var value string
 	err = row.Scan(&t.id, &objId, &date, &value)
 	if err != nil {
@@ -247,7 +251,7 @@ func (t *TextAttribute) ScanRow(row *sql.Row) (err error) {
 
 func (t *TextAttribute) ScanRows(rows *sql.Rows) (err error) {
 	var date time.Time
-	var objId uuid.UUID
+	var objId xid.ID
 	var value string
 	err = rows.Scan(&t.id, &objId, &date, &value)
 	if err != nil {

@@ -6,34 +6,33 @@ import (
 	"fmt"
 	"paroket/object"
 	"paroket/utils"
-	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 )
 
-type AttributeId uuid.UUID
+type AttributeId xid.ID
 
-type AttributeClassId uuid.UUID
+type AttributeClassId xid.ID
 
 // Scan 实现 sql.Scanner 接口
 func (id *AttributeClassId) Scan(value interface{}) error {
-	return (*uuid.UUID)(id).Scan(value)
+	return (*xid.ID)(id).Scan(value)
 }
 
 // Value 实现 driver.Valuer 接口
 func (id AttributeClassId) Value() (driver.Value, error) {
-	return uuid.UUID(id).Value()
+	return xid.ID(id).Value()
 }
 
 // Scan 实现 sql.Scanner 接口
 func (id *AttributeId) Scan(value interface{}) error {
-	return (*uuid.UUID)(id).Scan(value)
+	return (*xid.ID)(id).Scan(value)
 }
 
 // Value 实现 driver.Valuer 接口
 func (id AttributeId) Value() (driver.Value, error) {
-	return uuid.UUID(id).Value()
+	return xid.ID(id).Value()
 }
 
 type attributeClassFieldMap struct{}
@@ -60,13 +59,13 @@ func InsertField() string {
 }
 
 func NewAttributeClassId() (AttributeClassId, error) {
-	uuid, err := uuid.NewV7()
-	return AttributeClassId(uuid), err
+	guid := xid.New()
+	return AttributeClassId(guid), nil
 }
 
 func NewAttributeId() (AttributeId, error) {
-	uuid, err := uuid.NewV7()
-	return AttributeId(uuid), err
+	guid := xid.New()
+	return AttributeId(guid), nil
 }
 
 // AttributeClass的具体实现接口
@@ -90,11 +89,8 @@ type AttributeClass struct {
 }
 
 func NewAttributeClass(attributbuteType string) (ac *AttributeClass, err error) {
-	uuid, err := uuid.NewV7()
-	if err != nil {
-		return
-	}
-	cid := AttributeClassId(uuid)
+	guid := xid.New()
+	cid := AttributeClassId(guid)
 	switch attributbuteType {
 	case AttributeTypeText:
 		ac = &AttributeClass{
@@ -108,12 +104,6 @@ func NewAttributeClass(attributbuteType string) (ac *AttributeClass, err error) 
 		err = fmt.Errorf("unsupport attribute type of %s", attributbuteType)
 		return
 	}
-	// ac = &AttributeClass{
-	// 	ClassId:           AttributeClassId(uuid),
-	// 	AttributeName:     "untitled",
-	// 	AttributeType:     attributbuteType,
-	// 	AttributeMetaInfo: map[string]interface{}{},
-	// }
 
 	return
 }
@@ -161,8 +151,8 @@ func (ac *AttributeClass) CreateDataTable(tx *sql.Tx) (err error) {
 }
 
 func (acid AttributeClassId) String() string {
-	uuid := uuid.UUID(acid)
-	return strings.ReplaceAll(uuid.String(), "-", "_")
+	guid := xid.ID(acid)
+	return guid.String()
 }
 
 func (acid AttributeClassId) QueryAttributeClass(tx *sql.Tx) (ac *AttributeClass, err error) {
@@ -185,6 +175,7 @@ func (acid AttributeClassId) QueryAttributeClass(tx *sql.Tx) (ac *AttributeClass
 type Attribute interface {
 	GetId() AttributeId                                       // 获取属性ID
 	GetJSON() string                                          //获取值的JSON表示
+	String() string                                           //获得值的string表示
 	GetType() string                                          //获取class ID
 	GetClassId() AttributeClassId                             //获取class ID
 	SetValue(map[string]interface{}) error                    //设置值
@@ -198,8 +189,8 @@ const (
 )
 
 type AttributeStore struct {
-	ObjectId      uuid.UUID
-	AttributeId   uuid.UUID
+	ObjectId      []byte
+	AttributeId   AttributeId
 	AttributeType string
 	UpdateDate    time.Time
 	Data          string

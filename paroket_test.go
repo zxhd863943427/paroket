@@ -10,7 +10,6 @@ import (
 	"paroket/object"
 	"paroket/table"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -99,7 +98,7 @@ func TestSqliteImpl(t *testing.T) {
 		assert.Equal(t, obj.ObjectId, addedObj.ObjectId)
 
 		// 验证对象是否存在于数据库
-		var dbObjId uuid.UUID
+		var dbObjId object.ObjectId
 		err = sqlite.db.QueryRow("SELECT object_id FROM objects WHERE object_id = ?", obj.ObjectId).Scan(&dbObjId)
 		assert.NoError(t, err)
 		assert.Equal(t, obj.ObjectId, object.ObjectId(dbObjId))
@@ -239,7 +238,9 @@ func TestSqliteImpl(t *testing.T) {
 		obj := &object.Object{ObjectId: objId}
 
 		// 尝试添加对象到不存在的表
-		tableId := table.TableId(uuid.New())
+		tableId, err := table.NewTableId()
+		assert.NoError(t, err)
+
 		err = sqlite.AddObjectToTable(tableId, obj.ObjectId)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "no such table")

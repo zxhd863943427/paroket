@@ -7,24 +7,24 @@ import (
 	"paroket/utils"
 	"strings"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 )
 
-type TableId uuid.UUID
+type TableId xid.ID
 
 func NewTableId() (TableId, error) {
-	uuid, err := uuid.NewV7()
-	return TableId(uuid), err
+	guid := xid.New()
+	return TableId(guid), nil
 }
 
 // Scan 实现 sql.Scanner 接口
 func (id *TableId) Scan(value interface{}) error {
-	return (*uuid.UUID)(id).Scan(value)
+	return (*xid.ID)(id).Scan(value)
 }
 
 // Value 实现 driver.Valuer 接口
 func (id TableId) Value() (driver.Value, error) {
-	return uuid.UUID(id).Value()
+	return xid.ID(id).Value()
 }
 
 type Table struct {
@@ -35,20 +35,20 @@ type Table struct {
 }
 
 func (tid TableId) String() string {
-	uuid := uuid.UUID(tid)
-	return strings.ReplaceAll(uuid.String(), "-", "_")
+	guid := xid.ID(tid)
+	return strings.ReplaceAll(guid.String(), "-", "_")
 }
 
 func (tid TableId) GetTableName() string {
-	uuid := uuid.UUID(tid)
-	str := strings.ReplaceAll(uuid.String(), "-", "_")
+	guid := xid.ID(tid)
+	str := strings.ReplaceAll(guid.String(), "-", "_")
 	return fmt.Sprintf("table_%s", str)
 }
 
 func NewTable() (t *Table, err error) {
-	uuid, err := uuid.NewV7()
+	tid, err := NewTableId()
 	t = &Table{
-		TableId:  TableId(uuid),
+		TableId:  TableId(tid),
 		MetaInfo: utils.JSONMap{},
 		Version:  0,
 	}
