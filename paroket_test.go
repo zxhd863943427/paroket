@@ -34,11 +34,11 @@ func TestSqliteImpl(t *testing.T) {
 				t.Log("Database connection closed successfully")
 			}
 		}
-		if err := os.Remove(dbPath); err != nil {
-			t.Logf("Failed to remove database file: %v", err)
-		} else {
-			t.Log("Database file removed successfully")
-		}
+		// if err := os.Remove(dbPath); err != nil {
+		// 	t.Logf("Failed to remove database file: %v", err)
+		// } else {
+		// 	t.Log("Database file removed successfully")
+		// }
 	}()
 
 	err = sqlite.LoadDB(dbPath)
@@ -53,7 +53,7 @@ func TestSqliteImpl(t *testing.T) {
 		tables := []string{
 			"tables", "table_views", "objects",
 			"attribute_classes", "table_to_attribute_classes",
-			"object_to_attribute_classes", "object_to_tables",
+			"object_to_attribute_classes",
 		}
 
 		for _, tableName := range tables {
@@ -70,7 +70,7 @@ func TestSqliteImpl(t *testing.T) {
 		tables := []string{
 			"tables", "table_views", "objects",
 			"attribute_classes", "table_to_attribute_classes",
-			"object_to_attribute_classes", "object_to_tables",
+			"object_to_attribute_classes",
 		}
 
 		for _, tableName := range tables {
@@ -88,9 +88,8 @@ func TestSqliteImpl(t *testing.T) {
 	t.Run("Test Object Operations", func(t *testing.T) {
 		cleanupDatabase()
 		// 创建新对象
-		objId, err := object.NewObjectId()
+		obj, err := object.NewObject()
 		assert.NoError(t, err)
-		obj := &object.Object{ObjectId: objId}
 
 		// 添加对象
 		addedObj, err := sqlite.AddObject(obj)
@@ -199,9 +198,9 @@ func TestSqliteImpl(t *testing.T) {
 		testNum := 100
 		objects := make([]*object.Object, testNum)
 		for i := 0; i < testNum; i++ {
-			objId, err := object.NewObjectId()
+			obj, err := object.NewObject()
 			assert.NoError(t, err)
-			objects[i] = &object.Object{ObjectId: objId}
+			objects[i] = obj
 		}
 
 		// 批量添加对象
@@ -233,9 +232,8 @@ func TestSqliteImpl(t *testing.T) {
 		var count int
 		cleanupDatabase()
 		// 创建对象
-		objId, err := object.NewObjectId()
+		obj, err := object.NewObject()
 		assert.NoError(t, err)
-		obj := &object.Object{ObjectId: objId}
 
 		// 尝试添加对象到不存在的表
 		tableId, err := table.NewTableId()
@@ -293,9 +291,8 @@ func TestSqliteImpl(t *testing.T) {
 	t.Run("Test Remove Object From Table", func(t *testing.T) {
 		cleanupDatabase()
 		// 创建对象
-		objId, err := object.NewObjectId()
+		obj, err := object.NewObject()
 		assert.NoError(t, err)
-		obj := &object.Object{ObjectId: objId}
 
 		// 添加对象
 		_, err = sqlite.AddObject(obj)
@@ -378,9 +375,8 @@ func TestSqliteImpl(t *testing.T) {
 	t.Run("Test Object Attribute Operations", func(t *testing.T) {
 		cleanupDatabase()
 		// 创建对象
-		objId, err := object.NewObjectId()
+		obj, err := object.NewObject()
 		assert.NoError(t, err)
-		obj := &object.Object{ObjectId: objId}
 
 		// 添加对象
 		_, err = sqlite.AddObject(obj)
@@ -427,9 +423,8 @@ func TestSqliteImpl(t *testing.T) {
 		cleanupDatabase()
 
 		// 创建对象
-		objId, err := object.NewObjectId()
+		obj, err := object.NewObject()
 		assert.NoError(t, err)
-		obj := &object.Object{ObjectId: objId}
 
 		// 添加对象
 		_, err = sqlite.AddObject(obj)
@@ -526,9 +521,8 @@ func TestSqliteImpl(t *testing.T) {
 		assert.Len(t, tableList, 2)
 
 		// 创建对象
-		objId, err := object.NewObjectId()
+		obj, err := object.NewObject()
 		assert.NoError(t, err)
-		obj := &object.Object{ObjectId: objId}
 
 		// 添加对象
 		_, err = sqlite.AddObject(obj)

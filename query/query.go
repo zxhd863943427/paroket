@@ -3,7 +3,7 @@ package query
 import (
 	"bytes"
 	"fmt"
-	"paroket/table"
+	"paroket/common"
 )
 
 type QueryField interface {
@@ -23,7 +23,7 @@ const (
 )
 
 type Query struct {
-	tableId table.TableId
+	tableId common.TableId
 	mode    QueryMode
 	fields  []string
 	query   *QueryNode
@@ -53,7 +53,7 @@ type SortNode struct {
 	SortValue map[string]interface{}
 }
 
-func NewQueryBuilder(tid table.TableId) *Query {
+func NewQueryBuilder(tid common.TableId) *Query {
 	return &Query{
 		tableId: tid,
 		fields:  []string{},
@@ -128,31 +128,32 @@ func (qb *Query) buildSort() (stmt string, err error) {
 }
 
 func (qb *Query) Build() (stmt string, err error) {
-	var buffer bytes.Buffer
-	tableName := qb.tableId.GetTableName()
-	buffer.WriteString(fmt.Sprintf("SELECT %s.object_id AS object_id", tableName))
-	for _, field := range qb.fields {
-		buffer.WriteString(", ")
-		buffer.WriteString(fmt.Sprintf(" %s.data AS %s ", field, field))
-	}
-	buffer.WriteString(fmt.Sprintf(" FROM %s ", tableName))
+	// TODO
+	// var buffer bytes.Buffer
+	// tableName := qb.tableId.GetTableName()
+	// buffer.WriteString(fmt.Sprintf("SELECT %s.object_id AS object_id", tableName))
+	// for _, field := range qb.fields {
+	// 	buffer.WriteString(", ")
+	// 	buffer.WriteString(fmt.Sprintf(" %s.data AS %s ", field, field))
+	// }
+	// buffer.WriteString(fmt.Sprintf(" FROM %s ", tableName))
 
-	// 构建Join
-	for _, field := range qb.fields {
-		buffer.WriteString(fmt.Sprintf(" LEFT JOIN %s ON %s.object_id = %s.object_id ", field, tableName, field))
-	}
-	queryStmt, err := qb.buildQuery()
-	if err != nil {
-		return
-	}
-	buffer.WriteString(queryStmt)
-	sortStmt, err := qb.buildSort()
-	if err != nil {
-		return
-	}
-	buffer.WriteString(sortStmt)
-	buffer.WriteString(fmt.Sprintf(" LIMIT %d OFFSET %d", qb.limit, qb.offset))
-	stmt = buffer.String()
+	// // 构建Join
+	// for _, field := range qb.fields {
+	// 	buffer.WriteString(fmt.Sprintf(" LEFT JOIN %s ON %s.object_id = %s.object_id ", field, tableName, field))
+	// }
+	// queryStmt, err := qb.buildQuery()
+	// if err != nil {
+	// 	return
+	// }
+	// buffer.WriteString(queryStmt)
+	// sortStmt, err := qb.buildSort()
+	// if err != nil {
+	// 	return
+	// }
+	// buffer.WriteString(sortStmt)
+	// buffer.WriteString(fmt.Sprintf(" LIMIT %d OFFSET %d", qb.limit, qb.offset))
+	// stmt = buffer.String()
 	return
 }
 

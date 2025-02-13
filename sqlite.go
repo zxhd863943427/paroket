@@ -8,6 +8,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"paroket/attribute"
+	"paroket/common"
 	"paroket/object"
 	"paroket/query"
 	"paroket/table"
@@ -18,7 +19,7 @@ type SqliteImpl struct {
 }
 
 func testsql() {
-	var pk Paroket
+	var pk common.DB
 	pk = NewSqliteImpl()
 	pk.InitDB()
 }
@@ -53,7 +54,9 @@ func (s *SqliteImpl) InitDB() (err error) {
 
 	// 创建对象
 	createObjectStmt := `CREATE TABLE IF NOT EXISTS objects (
-		object_id BLOB PRIMARY KEY
+		object_id BLOB PRIMARY KEY,
+		tables JSONB NOT NULL,
+		data JSONB NOT NULL
 	);`
 
 	// 创建属性类
@@ -80,14 +83,6 @@ func (s *SqliteImpl) InitDB() (err error) {
 		FOREIGN KEY (class_id) REFERENCES attribute_classes(class_id) ON DELETE CASCADE
 	);`
 
-	// 创建对象与表格的关联表
-	createObjectToTableStmt := `CREATE TABLE IF NOT EXISTS object_to_tables (
-		object_id BLOB NOT NULL,
-		table_id BLOB NOT NULL,
-		FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE,
-		FOREIGN KEY (table_id) REFERENCES tables(table_id) ON DELETE CASCADE
-	);`
-
 	initStmt := []string{
 		createObjectStmt,
 		createTableStmt,
@@ -95,7 +90,6 @@ func (s *SqliteImpl) InitDB() (err error) {
 		createTableViewStmt,
 		createTableToAttributeClassStmt,
 		createObjectToAttributeClassStmt,
-		createObjectToTableStmt,
 	}
 	for _, stmt := range initStmt {
 		if _, err = s.db.Exec(stmt); err != nil {
@@ -133,8 +127,8 @@ func (s *SqliteImpl) LoadDB(dbPath string) (err error) {
 
 // 添加对象
 func (s *SqliteImpl) AddObject(o *object.Object) (obj *object.Object, err error) {
-	addObjectStmt := "INSERT INTO objects (object_id) VALUES (?)"
-	if _, err = s.db.Exec(addObjectStmt, o.ObjectId); err != nil {
+	addObjectStmt := "INSERT INTO objects (object_id,tables,value) VALUES (?,?,?)"
+	if _, err = s.db.Exec(addObjectStmt, o.ObjectId, o.Tables, o.Value); err != nil {
 		return
 	}
 	obj = o
@@ -143,8 +137,8 @@ func (s *SqliteImpl) AddObject(o *object.Object) (obj *object.Object, err error)
 
 // 添加对象
 func (s *SqliteImpl) AddObjectWithTx(o *object.Object, tx *sql.Tx) (obj *object.Object, err error) {
-	addObjectStmt := "INSERT INTO objects (object_id) VALUES (?)"
-	if _, err = tx.Exec(addObjectStmt, o.ObjectId); err != nil {
+	addObjectStmt := "INSERT INTO objects (object_id,tables,value) VALUES (?,?,?)"
+	if _, err = tx.Exec(addObjectStmt, o.ObjectId, o.Tables, o.Value); err != nil {
 		return
 	}
 	obj = o
@@ -313,7 +307,7 @@ func (s *SqliteImpl) AddTable(t *table.Table) (nt *table.Table, err error) {
 	addTableStmt := `INSERT INTO tables (table_id, table_name, meta_info, table_version) VALUES (?, ?, ?, ?)`
 
 	// 创建table所对应的数据表
-	createDataTableStmt := fmt.Sprintf(
+	createTableStmt := fmt.Sprintf(
 		`CREATE TABLE %s (
 		object_id BLOB PRIMARY KEY, 
 		update_time DATETIME,
@@ -322,12 +316,46 @@ func (s *SqliteImpl) AddTable(t *table.Table) (nt *table.Table, err error) {
 		t.TableId.GetTableName(),
 	)
 
+	// 创建table缓存数据表
+	createQueryTableStmt := fmt.Sprintf(
+		`CREATE TABLE %s (
+		object_id BLOB PRIMARY KEY, 
+		value JSONB NOT NULL,
+		FOREIGN KEY (object_id) REFERENCES %s(object_id) ON DELETE CASCADE
+		)`,
+		t.TableId.GetQueryTableName(),
+		t.TableId.GetTableName(),
+	)
+
+	// 创建table缓存数据表 trigger
+	createTableTriggerStmt := fmt.Sprintf(`
+CREATE TRIGGER IF NOT EXISTS %s
+	AFTER INSERT ON %s
+	FOR EACH ROW
+	BEGIN
+		INSERT INTO %s (object_id, value)
+		SELECT NEW.object_id, value
+		FROM objects
+		WHERE object_id = NEW.object_id;
+	END;`,
+		t.TableId.GetInsertTriggerName(),
+		t.TableId.GetTableName(),
+		t.TableId.GetQueryTableName(),
+	)
 	if _, err = tx.Exec(addTableStmt, t.TableId, t.TableName, t.MetaInfo, t.Version); err != nil {
 		return
 	}
-	if _, err = tx.Exec(createDataTableStmt, t.TableId); err != nil {
-		return
+	stmtList := []string{
+		createTableStmt,
+		createQueryTableStmt,
+		createTableTriggerStmt,
 	}
+	for _, stmt := range stmtList {
+		if _, err = tx.Exec(stmt); err != nil {
+			return
+		}
+	}
+
 	nt = &table.Table{
 		TableId:  t.TableId,
 		MetaInfo: t.MetaInfo,

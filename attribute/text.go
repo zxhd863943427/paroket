@@ -11,7 +11,7 @@ import (
 )
 
 type TextAttributeClass struct {
-	AttributeClass *AttributeClass
+	AttributeClass AttributeClass
 }
 
 type TextAttribute struct {
@@ -40,32 +40,32 @@ func (tc *TextAttributeClass) NewAttribute() (attr Attribute, err error) {
 	return
 }
 
-func (tc *TextAttributeClass) CreateDataTableStmt() (dataTable string, indexTable string, execIndex string) {
-	dataTableName := tc.GetDataTableName()
-	indexTableName := tc.GetDataIndexName()
-	dataTable = fmt.Sprintf(
-		`CREATE TABLE %s (
-		attribute_id BLOB PRIMARY KEY,
-		object_id BLOB UNIQUE NOT NULL,
-		update_time DATETIME NOT NULL,
-		data JSONB NOT NULL,
-		FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE
-		)`, dataTableName)
+func (tc *TextAttributeClass) CreateDataTable(tx *sql.Tx) (err error) {
+	// dataTableName := tc.GetDataTableName()
+	// indexTableName := tc.GetDataIndexName()
+	// dataTable := fmt.Sprintf(
+	// 	`CREATE TABLE %s (
+	// 	attribute_id BLOB PRIMARY KEY,
+	// 	object_id BLOB UNIQUE NOT NULL,
+	// 	update_time DATETIME NOT NULL,
+	// 	data JSONB NOT NULL,
+	// 	FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE
+	// 	)`, dataTableName)
 
-	indexTable = fmt.Sprintf(`CREATE TABLE %s (
-		attribute_id BLOB NOT NULL,
-		idx TEXT NOT NULL,
-		FOREIGN KEY (attribute_id) REFERENCES %s(attribute_id) ON DELETE CASCADE
-		)`, indexTableName, dataTableName)
-	execIndex = fmt.Sprintf(`
-	CREATE INDEX idx_%s ON %s(idx, attribute_id);
-	CREATE INDEX idx_%s_data ON %s(object_id, data);
-	CREATE INDEX idx_%s_data_sort ON %s(data  -> '$.value');
-	`,
-		indexTableName, indexTableName,
-		dataTableName, dataTableName,
-		dataTableName, dataTableName,
-	)
+	// indexTable := fmt.Sprintf(`CREATE TABLE %s (
+	// 	attribute_id BLOB NOT NULL,
+	// 	idx TEXT NOT NULL,
+	// 	FOREIGN KEY (attribute_id) REFERENCES %s(attribute_id) ON DELETE CASCADE
+	// 	)`, indexTableName, dataTableName)
+	// execIndex := fmt.Sprintf(`
+	// CREATE INDEX idx_%s ON %s(idx, attribute_id);
+	// CREATE INDEX idx_%s_data ON %s(object_id, data);
+	// CREATE INDEX idx_%s_data_sort ON %s(data  -> '$.value');
+	// `,
+	// 	indexTableName, indexTableName,
+	// 	dataTableName, dataTableName,
+	// 	dataTableName, dataTableName,
+	// )
 	return
 }
 

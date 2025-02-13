@@ -2,8 +2,8 @@ package attribute
 
 import (
 	"database/sql"
-	"database/sql/driver"
 	"fmt"
+	"paroket/common"
 	"paroket/object"
 	"paroket/utils"
 	"time"
@@ -11,28 +11,14 @@ import (
 	"github.com/rs/xid"
 )
 
-type AttributeId xid.ID
-
-type AttributeClassId xid.ID
-
-// Scan 实现 sql.Scanner 接口
-func (id *AttributeClassId) Scan(value interface{}) error {
-	return (*xid.ID)(id).Scan(value)
-}
-
-// Value 实现 driver.Valuer 接口
-func (id AttributeClassId) Value() (driver.Value, error) {
-	return xid.ID(id).Value()
-}
-
-// Scan 实现 sql.Scanner 接口
-func (id *AttributeId) Scan(value interface{}) error {
-	return (*xid.ID)(id).Scan(value)
-}
-
-// Value 实现 driver.Valuer 接口
-func (id AttributeId) Value() (driver.Value, error) {
-	return xid.ID(id).Value()
+// 公用实现
+type attributeClass struct {
+	db                common.DB
+	classId           common.AttributeClassId
+	attributeName     string
+	attributeType     AttributeType
+	attributeMetaInfo utils.JSONMap
+	impl              attributeClassImpl
 }
 
 type attributeClassFieldMap struct{}
@@ -58,48 +44,19 @@ func InsertField() string {
 	return `(?, ?, ?, ?)`
 }
 
-func NewAttributeClassId() (AttributeClassId, error) {
-	guid := xid.New()
-	return AttributeClassId(guid), nil
-}
-
-func NewAttributeId() (AttributeId, error) {
-	guid := xid.New()
-	return AttributeId(guid), nil
-}
-
-// AttributeClass的具体实现接口
-type AttributeClassImpl interface {
-	NewAttribute() (attr Attribute, err error)                       //创建Attrbute
-	SearchByID(tx *sql.Tx, objId object.ObjectId) (Attribute, error) //根据ObjectId搜索属性
-	CreateDataTableStmt() (dataTable, indexTable, execIndex string)  // 获取创建data的语句
-	GetDataTableName() string                                        //获取数据表名称
-	GetDataIndexName() string                                        //获取索引表名称
-	BuildQuery(v map[string]interface{}) (string, error)             //构建查询
-	BuildSort(v map[string]interface{}) (string, error)              //构建排序
-}
-
-// 公用实现
-type AttributeClass struct {
-	ClassId           AttributeClassId
-	AttributeName     string
-	AttributeType     string
-	AttributeMetaInfo utils.JSONMap
-	Impl              AttributeClassImpl
-}
-
-func NewAttributeClass(attributbuteType string) (ac *AttributeClass, err error) {
+func NewAttributeClass(attributbuteType AttributeType) (ac AttributeClass, err error) {
 	guid := xid.New()
 	cid := AttributeClassId(guid)
 	switch attributbuteType {
 	case AttributeTypeText:
-		ac = &AttributeClass{
-			ClassId:           cid,
-			AttributeName:     "untitled",
-			AttributeType:     AttributeTypeText,
-			AttributeMetaInfo: map[string]interface{}{},
+		act := &attributeClass{
+			classId:           cid,
+			attributeName:     "untitled",
+			attributeType:     AttributeTypeText,
+			attributeMetaInfo: map[string]interface{}{},
 		}
-		ac.Impl = &TextAttributeClass{AttributeClass: ac}
+		act.impl = &attribute.TextAttributeClass{AttributeClass: ac}
+		ac = act
 	default:
 		err = fmt.Errorf("unsupport attribute type of %s", attributbuteType)
 		return
@@ -108,46 +65,12 @@ func NewAttributeClass(attributbuteType string) (ac *AttributeClass, err error) 
 	return
 }
 
-func (ac *AttributeClass) SearchByID(tx *sql.Tx, objId object.ObjectId) (attr Attribute, err error) {
-	return ac.Impl.SearchByID(tx, objId)
+func (ac *attributeClass) SearchByID(tx *sql.Tx, objId object.ObjectId) (attr Attribute, err error) {
+	return ac.impl.SearchByID(tx, objId)
 }
 
-func (ac *AttributeClass) GetDataTableName() string {
-	return ac.Impl.GetDataTableName()
-}
-
-func (ac *AttributeClass) GetDataIndexName() string {
-	return ac.Impl.GetDataIndexName()
-}
-
-func (ac *AttributeClass) NewAttribute() (attr Attribute, err error) {
-	return ac.Impl.NewAttribute()
-}
-
-func (ac *AttributeClass) ScanRow(row *sql.Row) (err error) {
-	if ac == nil {
-		return fmt.Errorf(`nil of AttributeClass`)
-	}
-	err = row.Scan(&ac.ClassId, &ac.AttributeName, &ac.AttributeType, &ac.AttributeMetaInfo)
-	return
-}
-
-func (ac *AttributeClass) InsertClass(tx *sql.Tx, tableName string) (err error) {
-	addAttributeClassStmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES %s", tableName, AttributeClassField(), InsertField())
-	_, err = tx.Exec(addAttributeClassStmt, ac.ClassId, ac.AttributeName, ac.AttributeType, ac.AttributeMetaInfo)
-	return
-}
-
-func (ac *AttributeClass) CreateDataTable(tx *sql.Tx) (err error) {
-	dataStmt, indexStmt, execIdxStmt := ac.Impl.CreateDataTableStmt()
-	stmts := []string{dataStmt, indexStmt, execIdxStmt}
-	for _, stmt := range stmts {
-		_, err = tx.Exec(stmt)
-		if err != nil {
-			return
-		}
-	}
-	return
+func (ac *attributeClass) NewAttribute() (attr Attribute, err error) {
+	return ac.impl.NewAttribute()
 }
 
 func (acid AttributeClassId) String() string {
@@ -155,37 +78,10 @@ func (acid AttributeClassId) String() string {
 	return guid.String()
 }
 
-func (acid AttributeClassId) QueryAttributeClass(tx *sql.Tx) (ac *AttributeClass, err error) {
-	ac = &AttributeClass{}
-
-	queryAtttributeClassStmt := fmt.Sprintf(`SELECT %s FROM attribute_classes WHERE class_id = ?`, AttributeClassField())
-	if err = ac.ScanRow(tx.QueryRow(queryAtttributeClassStmt, acid)); err != nil {
-		return
-	}
-	switch ac.AttributeType {
-	case AttributeTypeText:
-		ac.Impl = &TextAttributeClass{AttributeClass: ac}
-	default:
-		err = fmt.Errorf("unsupport type from database : %s", ac.AttributeType)
-		return
-	}
-	return
-}
-
-type Attribute interface {
-	GetId() AttributeId                                       // 获取属性ID
-	GetJSON() string                                          //获取值的JSON表示
-	String() string                                           //获得值的string表示
-	GetType() string                                          //获取class ID
-	GetClassId() AttributeClassId                             //获取class ID
-	SetValue(map[string]interface{}) error                    //设置值
-	InsertData(tx *sql.Tx, objId object.ObjectId) (err error) //插入数据和索引
-	UpdateData(tx *sql.Tx) (err error)                        //更新数据和索引
-	DeleteData(tx *sql.Tx) (err error)                        //删除数据和索引
-}
+type AttributeType string
 
 const (
-	AttributeTypeText = "text"
+	AttributeTypeText AttributeType = "text"
 )
 
 type AttributeStore struct {
