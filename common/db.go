@@ -30,7 +30,7 @@ type DB interface {
 
 	OpenTable(ctx context.Context, tid TableId) (Table, error)
 
-	Table(ctx context.Context) (Table, error)
+	Table(ctx context.Context, tid TableId) (Table, error)
 
 	DeleteTable(ctx context.Context, tid TableId) error
 
