@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/mattn/go-sqlite3"
 	_ "github.com/mattn/go-sqlite3"
 
 	"paroket/common"
@@ -31,21 +32,85 @@ func NewSqliteImpl() (s *SqliteImpl) {
 	return
 }
 
+type sqliteOp struct {
+	op    int
+	db    string
+	table string
+	rowid int64
+}
+
+func registerSqliteHook() (pipe chan *sqliteOp) {
+	pipe = make(chan *sqliteOp)
+
+	sql.Register("sqlite3_extend_by_paroket",
+		&sqlite3.SQLiteDriver{
+			ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+
+				// 注册普通函数
+				funcMap := custmFunc()
+				for key, impl := range funcMap {
+					conn.RegisterFunc(key, impl.impl, impl.pure)
+				}
+				// 注册统计函数
+				aggrFuncMap := custmAggrFunc()
+				for key, impl := range aggrFuncMap {
+					conn.RegisterAggregator(key, impl.impl, impl.pure)
+				}
+				// 注册update hook
+				conn.RegisterUpdateHook(func(op int, db string, table string, rowid int64) {
+					o := &sqliteOp{
+						op:    op,
+						db:    db,
+						table: table,
+						rowid: rowid,
+					}
+					go func() {
+						pipe <- o
+					}()
+				})
+				return nil
+			},
+		})
+	return
+}
+
+func updateTableHook(s *SqliteImpl, ctx context.Context, pipe chan *sqliteOp) {
+	for {
+		op := <-pipe
+		switch op.op {
+		case sqlite3.SQLITE_UPDATE:
+			if op.table == "objects" {
+				_, err := tryGetTx(s, ctx)
+				if err != nil {
+					continue
+				}
+				fmt.Println(op)
+			}
+		}
+	}
+}
+
+func tryGetTx(s *SqliteImpl, ctx context.Context) (tx tx.WriteTx, err error) {
+	cnt := 10
+	for i := 0; i < cnt; i++ {
+		tx, err = s.WriteTx(ctx)
+		if err != nil {
+			break
+		}
+	}
+	return
+}
+
 func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Config) (err error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	db, err := sql.Open("sqlite3", dbPath)
+	pipe := registerSqliteHook()
+	db, err := sql.Open("sqlite3_extend_by_paroket", dbPath)
+	go updateTableHook(s, ctx, pipe)
 	if err != nil {
 		return
 	}
-	tx, err := db.BeginTx(ctx, nil)
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
+
 	// 创建表
 	createTableStmt := `CREATE TABLE IF NOT EXISTS tables (
 		table_id BLOB PRIMARY KEY,
@@ -72,8 +137,10 @@ func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 	createAttributeClassStmt := `CREATE TABLE IF NOT EXISTS attribute_classes (
 		class_id BLOB PRIMARY KEY,
 		attribute_name TEXT NOT NULL,
+		attribute_key  TEXT NOT NULL,
 		attribute_type TEXT NOT NULL,
-		attribute_meta_info JSONB NOT NULL
+		attribute_meta_info JSONB NOT NULL,
+		unique (attribute_key)
 	);`
 
 	// 创建表与属性类的关联表
@@ -101,21 +168,21 @@ func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 		createObjectToAttributeClassStmt,
 	}
 	for _, stmt := range initStmt {
-		if _, err = tx.Exec(stmt); err != nil {
+		if _, err = db.Exec(stmt); err != nil {
 			return
 		}
 	}
 	// 启用外键支持
-	if _, err = tx.Exec("PRAGMA foreign_keys = ON"); err != nil {
+	if _, err = db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		return
 	}
 	// 设置WAL模式
-	if _, err = tx.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	if _, err = db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		return
 	}
 	// 验证外键支持是否启用
 	var fkEnabled int
-	if err = tx.QueryRow("PRAGMA foreign_keys;").Scan(&fkEnabled); err != nil {
+	if err = db.QueryRow("PRAGMA foreign_keys;").Scan(&fkEnabled); err != nil {
 		return
 	}
 	if fkEnabled != 1 {
@@ -127,23 +194,84 @@ func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 }
 
 // AttributeClass操作
-func (s *SqliteImpl) CreateAttributeClass(ctx context.Context, AttrType common.Attribute) (ac common.AttributeClass, err error)
+func (s *SqliteImpl) CreateAttributeClass(ctx context.Context, AttrType common.AttributeType) (ac common.AttributeClass, err error) {
+	// TODO
+	panic("un impl")
+}
 
-func (s *SqliteImpl) OpenAttributeClass(ctx context.Context, acid common.AttributeClassId) (ac common.AttributeClass, err error)
+func (s *SqliteImpl) OpenAttributeClass(ctx context.Context, acid common.AttributeClassId) (ac common.AttributeClass, err error) {
+	// TODO
+	panic("un impl")
+}
 
-func (s *SqliteImpl) ListAttributeClass(ctx context.Context) (ac common.AttributeClass, err error)
+func (s *SqliteImpl) ListAttributeClass(ctx context.Context) (ac common.AttributeClass, err error) {
+	// TODO
+	panic("un impl")
+}
+
+func (s *SqliteImpl) DeleteAttributeClass(ctx context.Context) (err error) {
+	// TODO
+	panic("un impl")
+}
 
 // Object操作
-func (s *SqliteImpl) CreateObject(ctx context.Context) (obj *common.Object, err error)
+func (s *SqliteImpl) CreateObject(ctx context.Context) (obj *common.Object, err error) {
 
-func (s *SqliteImpl) OpenObject(ctx context.Context, oid common.ObjectId) (obj *common.Object, err error)
+	obj, err = common.NewObject()
+	if err != nil {
+		return
+	}
+	tx, err := s.WriteTx(ctx)
+	if err != nil {
+		return
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		} else {
+			tx.Commit()
+		}
+	}()
+	insertStmt := `INSERT INTO objects 
+    (object_id,tables,data)
+    VALUES
+    (?,'{}',?)`
+	if _, err = tx.Exac(insertStmt, obj.ObjectId, obj.Data); err != nil {
+		return
+	}
+	return
+}
+
+func (s *SqliteImpl) OpenObject(ctx context.Context, oid common.ObjectId) (obj *common.Object, err error) {
+	// TODO
+	panic("un impl")
+}
+
+func (s *SqliteImpl) DeleteObject(ctx context.Context, oid common.ObjectId) (err error) {
+	// TODO
+	panic("un impl")
+}
 
 // Table 操作
-func (s *SqliteImpl) CreateTable(ctx context.Context) (common.Table, error)
+func (s *SqliteImpl) CreateTable(ctx context.Context) (table common.Table, err error) {
+	// TODO
+	panic("un impl")
+}
 
-func (s *SqliteImpl) OpenTable(ctx context.Context, tid common.TableId) (common.Table, error)
+func (s *SqliteImpl) OpenTable(ctx context.Context, tid common.TableId) (table common.Table, err error) {
+	// TODO
+	panic("un impl")
+}
 
-func (s *SqliteImpl) Table(ctx context.Context) (common.Table, error)
+func (s *SqliteImpl) Table(ctx context.Context, tid common.TableId) (table common.Table, err error) {
+	// TODO
+	panic("un impl")
+}
+
+func (s *SqliteImpl) DeleteTable(ctx context.Context, tid common.TableId) error {
+	// TODO
+	panic("un impl")
+}
 
 // DB操作
 func (s *SqliteImpl) ReadTx(ctx context.Context) (rtx tx.ReadTx, err error) {
@@ -160,6 +288,8 @@ func (s *SqliteImpl) ReadTx(ctx context.Context) (rtx tx.ReadTx, err error) {
 }
 
 func (s *SqliteImpl) WriteTx(ctx context.Context) (wtx tx.WriteTx, err error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return
