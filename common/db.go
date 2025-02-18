@@ -10,16 +10,20 @@ type DB interface {
 	Open(ctx context.Context, dbPath string, config *Config) error
 
 	// AttributeClass操作
-	CreateAttributeClass(ctx context.Context, AttrType Attribute) (ac AttributeClass, err error)
+	CreateAttributeClass(ctx context.Context, AttrType AttributeType) (ac AttributeClass, err error)
 
 	OpenAttributeClass(ctx context.Context, acid AttributeClassId) (ac AttributeClass, err error)
 
 	ListAttributeClass(ctx context.Context) (ac AttributeClass, err error)
 
+	DeleteAttributeClass(ctx context.Context) (err error)
+
 	// Object操作
 	CreateObject(ctx context.Context) (obj *Object, err error)
 
 	OpenObject(ctx context.Context, oid ObjectId) (obj *Object, err error)
+
+	DeleteObject(ctx context.Context, oid ObjectId) (err error)
 
 	// Table 操作
 	CreateTable(ctx context.Context) (Table, error)
@@ -27,6 +31,8 @@ type DB interface {
 	OpenTable(ctx context.Context, tid TableId) (Table, error)
 
 	Table(ctx context.Context) (Table, error)
+
+	DeleteTable(ctx context.Context, tid TableId) error
 
 	// DB操作
 	ReadTx(ctx context.Context) (tx.ReadTx, error)
