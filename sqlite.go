@@ -25,10 +25,11 @@ type SqliteImpl struct {
 func testsql() {
 	var pk common.DB
 	pk = NewSqliteImpl()
+
 	pk.Open(context.Background(), ":memory:", nil)
 }
 
-func NewSqliteImpl() (s *SqliteImpl) {
+func NewSqliteImpl() (s common.DB) {
 	s = &SqliteImpl{
 		lock:     &sync.Mutex{},
 		db:       nil,
@@ -138,7 +139,6 @@ func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 	createObjectStmt := `CREATE TABLE IF NOT EXISTS objects (
 		key INTEGER PRIMARY KEY,
 		object_id BLOB NOT NULL,
-		tables JSONB NOT NULL,
 		data JSONB NOT NULL,
 		unique (object_id)
 	);`
@@ -159,7 +159,9 @@ func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 		class_id BLOB NOT NULL,
 		FOREIGN KEY (table_id) REFERENCES tables(table_id) ON DELETE CASCADE,
 		FOREIGN KEY (class_id) REFERENCES attribute_classes(class_id) ON DELETE CASCADE
-	);`
+	);
+	CREATE INDEX IF NOT EXISTS table_to_attribute_classes_table_id ON table_to_attribute_classes (table_id);
+	CREATE INDEX IF NOT EXISTS table_to_attribute_classes_class_id ON table_to_attribute_classes (class_id);`
 
 	// 创建对象与属性类的关联表
 	createObjectToAttributeClassStmt := `CREATE TABLE IF NOT EXISTS object_to_attribute_classes (
@@ -167,7 +169,19 @@ func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 		class_id BLOB NOT NULL,
 		FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE,
 		FOREIGN KEY (class_id) REFERENCES attribute_classes(class_id) ON DELETE CASCADE
-	);`
+	);
+	CREATE INDEX IF NOT EXISTS object_to_attribute_classes_object_id ON object_to_attribute_classes (object_id);
+	CREATE INDEX IF NOT EXISTS object_to_attribute_classes_class_id ON object_to_attribute_classes (class_id);`
+
+	// 创建对象与表的关联表
+	createObjectTotablesStmt := `CREATE TABLE IF NOT EXISTS object_to_tables (
+		object_id BLOB NOT NULL,
+		table_id BLOB NOT NULL,
+		FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE,
+		FOREIGN KEY (table_id) REFERENCES tables(table_id) ON DELETE CASCADE
+		);
+	CREATE INDEX IF NOT EXISTS object_to_tables_object_id ON object_to_tables (object_id, table_id);
+	CREATE INDEX IF NOT EXISTS object_to_tables_table_id ON object_to_tables (table_id, object_id);`
 
 	initStmt := []string{
 		createObjectStmt,
@@ -176,6 +190,7 @@ func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 		createTableViewStmt,
 		createTableToAttributeClassStmt,
 		createObjectToAttributeClassStmt,
+		createObjectTotablesStmt,
 	}
 	for _, stmt := range initStmt {
 		if _, err = db.Exec(stmt); err != nil {
@@ -204,16 +219,16 @@ func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 }
 
 // AttributeClass操作
-func (s *SqliteImpl) CreateAttributeClass(ctx context.Context, attrType common.AttributeType) (ac common.AttributeClass, err error) {
-	return attribute.NewAttributeClass(ctx, s, attrType)
+func (s *SqliteImpl) CreateAttributeClass(ctx context.Context, tx tx.WriteTx, attrType common.AttributeType) (ac common.AttributeClass, err error) {
+	return attribute.NewAttributeClass(ctx, s, tx, attrType)
 }
 
-func (s *SqliteImpl) OpenAttributeClass(ctx context.Context, acid common.AttributeClassId) (ac common.AttributeClass, err error) {
+func (s *SqliteImpl) OpenAttributeClass(ctx context.Context, tx tx.ReadTx, acid common.AttributeClassId) (ac common.AttributeClass, err error) {
 	var ok bool
 	if ac, ok = s.acMap[acid]; ok {
 		return ac, nil
 	}
-	ac, err = attribute.QueryAttributeClass(ctx, s, acid)
+	ac, err = attribute.QueryAttributeClass(ctx, s, tx, acid)
 
 	if err != nil {
 		if errors.Is(err, common.ErrAttributeClassNotFound) {
@@ -226,38 +241,32 @@ func (s *SqliteImpl) OpenAttributeClass(ctx context.Context, acid common.Attribu
 	return
 }
 
-func (s *SqliteImpl) ListAttributeClass(ctx context.Context) (acList []common.AttributeClass, err error) {
+func (s *SqliteImpl) ListAttributeClass(ctx context.Context, tx tx.ReadTx) (acList []common.AttributeClass, err error) {
 	acidList := []common.AttributeClassId{}
 	acList = []common.AttributeClass{}
-	func() {
-		var tx tx.ReadTx
-		var rows *sql.Rows
-
-		tx, err = s.ReadTx(ctx)
-		if err != nil {
+	var rows *sql.Rows
+	if err != nil {
+		return
+	}
+	queryClassIdStmt := `
+	SELECT class_id FROM attribute_classes`
+	rows, err = tx.Query(queryClassIdStmt)
+	if err != nil {
+		return
+	}
+	for rows.Next() {
+		var acid common.AttributeClassId
+		if err = rows.Scan(&acid); err != nil {
 			return
 		}
-		defer tx.Commit()
-		queryClassIdStmt := `
-		SELECT class_id FROM attribute_classes`
-		rows, err = tx.Query(queryClassIdStmt)
-		if err != nil {
-			return
-		}
-		for rows.Next() {
-			var acid common.AttributeClassId
-			if err = rows.Scan(&acid); err != nil {
-				return
-			}
-			acidList = append(acidList, acid)
-		}
-	}()
+		acidList = append(acidList, acid)
+	}
 	if err != nil {
 		return
 	}
 	for _, acid := range acidList {
 		var ac common.AttributeClass
-		ac, err = attribute.QueryAttributeClass(ctx, s, acid)
+		ac, err = attribute.QueryAttributeClass(ctx, s, tx, acid)
 		if err != nil {
 			return
 		}
@@ -267,69 +276,35 @@ func (s *SqliteImpl) ListAttributeClass(ctx context.Context) (acList []common.At
 	return
 }
 
-func (s *SqliteImpl) DeleteAttributeClass(ctx context.Context, acid common.AttributeClassId) (err error) {
-	ac, err := s.OpenAttributeClass(ctx, acid)
+func (s *SqliteImpl) DeleteAttributeClass(ctx context.Context, tx tx.WriteTx, acid common.AttributeClassId) (err error) {
+	ac, err := s.OpenAttributeClass(ctx, tx, acid)
 	if err != nil {
 		return
 	}
-	err = ac.Drop(ctx)
+	err = ac.Drop(ctx, tx)
 	return
 }
 
 // Object操作
-func (s *SqliteImpl) CreateObject(ctx context.Context) (obj *common.Object, err error) {
+func (s *SqliteImpl) CreateObject(ctx context.Context, tx tx.WriteTx) (obj common.Object, err error) {
 
-	obj, err = common.NewObject()
+	obj, err = common.NewObject(ctx, tx)
 	if err != nil {
-		return
-	}
-	tx, err := s.WriteTx(ctx)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
-	insertStmt := `INSERT INTO objects 
-    (object_id,tables,data)
-    VALUES
-    (?,'{}',jsonb(?))`
-	if _, err = tx.Exac(insertStmt, obj.ObjectId, obj.Data); err != nil {
 		return
 	}
 	return
 }
 
-func (s *SqliteImpl) OpenObject(ctx context.Context, oid common.ObjectId) (obj *common.Object, err error) {
-	tx, err := s.ReadTx(ctx)
+func (s *SqliteImpl) OpenObject(ctx context.Context, tx tx.ReadTx, oid common.ObjectId) (obj common.Object, err error) {
+
+	obj, err = common.QueryObject(ctx, tx, oid)
 	if err != nil {
-		return
-	}
-	defer tx.Commit()
-	obj = &common.Object{}
-	query := `SELECT object_id ,data FROM objects WHERE object_id = ?`
-	if err = tx.QueryRow(query, oid).Scan(&obj.ObjectId, &obj.Data); err != nil {
 		return
 	}
 	return
 }
 
-func (s *SqliteImpl) DeleteObject(ctx context.Context, oid common.ObjectId) (err error) {
-	tx, err := s.WriteTx(ctx)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
+func (s *SqliteImpl) DeleteObject(ctx context.Context, tx tx.WriteTx, oid common.ObjectId) (err error) {
 	query := `DELETE FROM objects WHERE object_id = ?`
 	if _, err = tx.Exac(query, oid); err != nil {
 		return
@@ -338,22 +313,22 @@ func (s *SqliteImpl) DeleteObject(ctx context.Context, oid common.ObjectId) (err
 }
 
 // Table 操作
-func (s *SqliteImpl) CreateTable(ctx context.Context) (table common.Table, err error) {
-	table, err = NewTable(ctx, s)
+func (s *SqliteImpl) CreateTable(ctx context.Context, tx tx.WriteTx) (table common.Table, err error) {
+	table, err = NewTable(ctx, s, tx)
 	return
 }
 
-func (s *SqliteImpl) OpenTable(ctx context.Context, tid common.TableId) (table common.Table, err error) {
-	table, err = QueryTable(ctx, s, tid)
+func (s *SqliteImpl) OpenTable(ctx context.Context, tx tx.ReadTx, tid common.TableId) (table common.Table, err error) {
+	table, err = QueryTable(ctx, s, tx, tid)
 	return
 }
 
-func (s *SqliteImpl) DeleteTable(ctx context.Context, tid common.TableId) (err error) {
-	table, err := QueryTable(ctx, s, tid)
+func (s *SqliteImpl) DeleteTable(ctx context.Context, tx tx.WriteTx, tid common.TableId) (err error) {
+	table, err := QueryTable(ctx, s, tx, tid)
 	if err != nil {
 		return
 	}
-	if err = table.DropTable(ctx); err != nil {
+	if err = table.DropTable(ctx, tx); err != nil {
 		return
 	}
 	return

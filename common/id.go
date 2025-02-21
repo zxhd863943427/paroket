@@ -2,6 +2,7 @@ package common
 
 import (
 	"database/sql/driver"
+	"fmt"
 
 	"github.com/rs/xid"
 )
@@ -27,6 +28,11 @@ func (id TableId) Value() (driver.Value, error) {
 func (tid TableId) String() string {
 	guid := xid.ID(tid)
 	return guid.String()
+}
+
+func (tid TableId) DataTable() string {
+	guid := xid.ID(tid)
+	return fmt.Sprintf("table_%s", guid.String())
 }
 
 func TableIdFromStr(s string) (TableId, error) {

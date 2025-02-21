@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"paroket/tx"
 	"paroket/utils"
 )
 
@@ -9,18 +10,18 @@ type AttributeClass interface {
 	Name() string
 	Type() AttributeType
 	ClassId() AttributeClassId
-	GetMetaInfo(ctx context.Context) (v utils.JSONMap, err error)
-	Set(ctx context.Context, v utils.JSONMap) (err error)
-	Insert(ctx context.Context, oid ObjectId) (attr Attribute, err error)
-	FindId(ctx context.Context, oid ObjectId) (attr Attribute, err error)
-	Update(ctx context.Context, oid ObjectId, attr Attribute) (err error)
-	Delete(ctx context.Context, oid ObjectId) (err error)
-	Drop(ctx context.Context) (err error) //删除属性类
+	GetMetaInfo(ctx context.Context, tx tx.ReadTx) (v utils.JSONMap, err error)
+	Set(ctx context.Context, tx tx.WriteTx, v utils.JSONMap) (err error)
+	Insert(ctx context.Context, tx tx.WriteTx, oid ObjectId) (attr Attribute, err error)
+	FindId(ctx context.Context, tx tx.ReadTx, oid ObjectId) (attr Attribute, err error)
+	Update(ctx context.Context, tx tx.WriteTx, oid ObjectId, attr Attribute) (err error)
+	Delete(ctx context.Context, tx tx.WriteTx, oid ObjectId) (err error)
+	Drop(ctx context.Context, tx tx.WriteTx) (err error) //删除属性类
 
 	//构建查询
-	BuildQuery(ctx context.Context, v map[string]interface{}) (string, error)
+	BuildQuery(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (string, error)
 	//构建排序
-	BuildSort(ctx context.Context, v map[string]interface{}) (string, error)
+	BuildSort(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (string, error)
 }
 
 type Attribute interface {

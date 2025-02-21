@@ -2,12 +2,15 @@ package attribute
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"paroket/common"
+	"paroket/tx"
 	"paroket/utils"
 
 	"github.com/rs/xid"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 type TextAttributeClass struct {
@@ -24,18 +27,8 @@ type TextJsonData struct {
 	Value string
 }
 
-func newTextAttributeClass(ctx context.Context, db common.DB) (ac common.AttributeClass, err error) {
-	tx, err := db.WriteTx(ctx)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
+func newTextAttributeClass(_ context.Context, db common.Database, tx tx.WriteTx) (ac common.AttributeClass, err error) {
+
 	id, err := common.NewAttributeClassId()
 	if err != nil {
 		return
@@ -94,32 +87,25 @@ func (tc *TextAttributeClass) ClassId() common.AttributeClassId {
 	return tc.id
 }
 
-func (tc *TextAttributeClass) GetMetaInfo(ctx context.Context) (v utils.JSONMap, err error) {
+func (tc *TextAttributeClass) GetMetaInfo(ctx context.Context, tx tx.ReadTx) (v utils.JSONMap, err error) {
 	m := utils.JSONMap{}
 	for key := range tc.metaInfo {
 		m[key] = tc.metaInfo[key]
 	}
 	return m, nil
 }
-func (tc *TextAttributeClass) Set(ctx context.Context, v utils.JSONMap) (err error) {
+func (tc *TextAttributeClass) Set(ctx context.Context, tx tx.WriteTx, v utils.JSONMap) (err error) {
 	oldName := tc.name
 	oldkey := tc.key
 	oldMetaInfo := utils.JSONMap{}
 	for key := range tc.metaInfo {
 		oldMetaInfo[key] = tc.metaInfo[key]
 	}
-	tx, err := tc.db.WriteTx(ctx)
-	if err != nil {
-		return
-	}
 	defer func() {
 		if err != nil {
-			tx.Rollback()
 			tc.name = oldName
 			tc.key = oldkey
 			tc.metaInfo = oldMetaInfo
-		} else {
-			tx.Commit()
 		}
 	}()
 
@@ -158,31 +144,31 @@ func (tc *TextAttributeClass) Set(ctx context.Context, v utils.JSONMap) (err err
 	return
 }
 
-func (tc *TextAttributeClass) Insert(ctx context.Context, oid common.ObjectId) (attr common.Attribute, err error) {
-	tx, err := tc.db.WriteTx(ctx)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
+func (tc *TextAttributeClass) Insert(ctx context.Context, tx tx.WriteTx, oid common.ObjectId) (attr common.Attribute, err error) {
+
 	attrText := &TextAttribute{
 		class: tc,
 		value: "",
 	}
 	attr = attrText
-	stmt := fmt.Sprintf(`
-UPDATE objects 
-	SET data = jsonb_set(data,'$."%v"',jsonb(?)) 
-WHERE object_id = ?;`, tc.id)
+	obj, err := tc.db.OpenObject(ctx, tx, oid)
+	if err != nil {
+		return
+	}
+	data := obj.Data()
+	newValue, err := sjson.SetRaw(string(data), tc.id.String(), attr.GetJSON())
+	if err != nil {
+		return
+	}
+	err = obj.Update(ctx, tx, []byte(newValue))
+	if err != nil {
+		return
+	}
 
 	updateTable, ok := tc.metaInfo["updated_table"].(string)
 	if !ok {
 		err = fmt.Errorf("TextAttribute metainfo dont have updated_table")
+		return
 	}
 	update := fmt.Sprintf(`
 INSERT INTO %s
@@ -191,10 +177,6 @@ VALUES
   (?,?)`, updateTable)
 	opId := xid.New()
 
-	_, err = tx.Exac(stmt, attr.GetJSON(), oid)
-	if err != nil {
-		return
-	}
 	_, err = tx.Exac(update, oid, opId)
 	if err != nil {
 		return
@@ -202,24 +184,16 @@ VALUES
 	return
 
 }
-func (tc *TextAttributeClass) FindId(ctx context.Context, oid common.ObjectId) (attr common.Attribute, err error) {
-	tx, err := tc.db.ReadTx(ctx)
+func (tc *TextAttributeClass) FindId(ctx context.Context, tx tx.ReadTx, oid common.ObjectId) (attr common.Attribute, err error) {
+	obj, err := tc.db.OpenObject(ctx, tx, oid)
 	if err != nil {
 		return
 	}
-	defer tx.Commit()
-	var data string
-	stmt := fmt.Sprintf(`
-SELECT json(data) FROM objects
-  WHERE object_id = ? AND data ->> '$."%v"' IS NOT NULL`, tc.id)
-	err = tx.QueryRow(stmt, oid).Scan(&data)
-	if err != nil {
-		return
-	}
+	data := obj.Data()
 	attrPath := fmt.Sprintf(`%v`, tc.id)
-	attrData := gjson.Get(data, attrPath)
+	attrData := gjson.Get(string(data), attrPath)
 	if attrData.Type == gjson.Null {
-		err = fmt.Errorf("query null attribute")
+		err = sql.ErrNoRows
 		return
 	}
 	attrText := &TextAttribute{
@@ -232,29 +206,25 @@ SELECT json(data) FROM objects
 	attr = attrText
 	return
 }
-func (tc *TextAttributeClass) Update(ctx context.Context, oid common.ObjectId, attr common.Attribute) (err error) {
-	tx, err := tc.db.WriteTx(ctx)
+func (tc *TextAttributeClass) Update(ctx context.Context, tx tx.WriteTx, oid common.ObjectId, attr common.Attribute) (err error) {
+	obj, err := tc.db.OpenObject(ctx, tx, oid)
 	if err != nil {
 		return
 	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
-	stmt := fmt.Sprintf(`
-UPDATE objects 
-	SET data = jsonb_set(data,'$."%v"',jsonb(?)) 
-WHERE object_id = ?;`, tc.id)
-	if _, err = tx.Exac(stmt, attr.GetJSON(), oid); err != nil {
+	data := obj.Data()
+	newValue, err := sjson.SetRaw(string(data), tc.id.String(), attr.GetJSON())
+	if err != nil {
 		return
-
 	}
+	err = obj.Update(ctx, tx, []byte(newValue))
+	if err != nil {
+		return
+	}
+
 	updateTable, ok := tc.metaInfo["updated_table"].(string)
 	if !ok {
 		err = fmt.Errorf("TextAttribute metainfo dont have updated_table")
+		return
 	}
 	update := fmt.Sprintf(`
 UPDATE %s SET updated = ?
@@ -268,28 +238,24 @@ UPDATE %s SET updated = ?
 
 	return
 }
-func (tc *TextAttributeClass) Delete(ctx context.Context, oid common.ObjectId) (err error) {
-	tx, err := tc.db.WriteTx(ctx)
+func (tc *TextAttributeClass) Delete(ctx context.Context, tx tx.WriteTx, oid common.ObjectId) (err error) {
+	obj, err := tc.db.OpenObject(ctx, tx, oid)
 	if err != nil {
 		return
 	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
-	stmt := fmt.Sprintf(`
-UPDATE objects 
-	SET data = jsonb_remove(data,'$."%v"') 
-WHERE object_id = ?;`, tc.id)
-	if _, err = tx.Exac(stmt, oid); err != nil {
+	data := obj.Data()
+	newValue, err := sjson.Delete(string(data), tc.id.String())
+	if err != nil {
+		return
+	}
+	err = obj.Update(ctx, tx, []byte(newValue))
+	if err != nil {
 		return
 	}
 	updateTable, ok := tc.metaInfo["updated_table"].(string)
 	if !ok {
 		err = fmt.Errorf("TextAttribute metainfo dont have updated_table")
+		return
 	}
 	deleteRecord := fmt.Sprintf(`
 DELETE FROM %s WHERE object_id = ?
@@ -300,31 +266,71 @@ DELETE FROM %s WHERE object_id = ?
 	return
 }
 
-func (tc *TextAttributeClass) Drop(ctx context.Context) (err error) {
-	tx, err := tc.db.WriteTx(ctx)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
+func (tc *TextAttributeClass) Drop(ctx context.Context, tx tx.WriteTx) (err error) {
+
 	updateTable, ok := tc.metaInfo["updated_table"].(string)
 	if !ok {
 		err = fmt.Errorf("TextAttribute metainfo dont have updated_table")
-	}
-
-	deleteAttributeStmt := fmt.Sprintf(`
-	UPDATE objects 
-		SET data = jsonb_remove(data,'$."%v"') 
-	WHERE object_id in (SELECT object_id FROM %s);`,
-		tc.id, updateTable)
-	if _, err = tx.Exac(deleteAttributeStmt); err != nil {
 		return
 	}
+	//先删除相关表的索引
+	tidList := []common.TableId{}
+	queryTableId := `
+	SELECT table_id FROM table_to_attribute_classes WHERE class_id = ?`
+	rows, err := tx.Query(queryTableId, tc.id)
+	if err != nil {
+		return
+	}
+	for rows.Next() {
+		var tid common.TableId
+		if err = rows.Scan(&tid); err != nil {
+			return
+		}
+		tidList = append(tidList, tid)
+	}
+	for _, tid := range tidList {
+		var table common.Table
+		table, err = tc.db.OpenTable(ctx, tx, tid)
+		if err != nil {
+			return
+		}
+		table.DeleteAttributeClass(ctx, tx, tc)
+	}
+
+	// 从相关的object中移除attribute
+	oidList := []common.ObjectId{}
+	queryObjectId := fmt.Sprintf(`
+	SELECT object_id FROM %s`, updateTable)
+	rows, err = tx.Query(queryObjectId)
+	if err != nil {
+		return
+	}
+	for rows.Next() {
+		var oid common.ObjectId
+		if err = rows.Scan(&oid); err != nil {
+			return
+		}
+		oidList = append(oidList, oid)
+	}
+
+	for _, oid := range oidList {
+		var obj common.Object
+		var newValue string
+		obj, err = tc.db.OpenObject(ctx, tx, oid)
+		if err != nil {
+			return
+		}
+		data := obj.Data()
+		newValue, err = sjson.Delete(string(data), tc.id.String())
+		if err != nil {
+			return
+		}
+		err = obj.Update(ctx, tx, []byte(newValue))
+		if err != nil {
+			return
+		}
+	}
+
 	dropTable := fmt.Sprintf("DROP TABLE %s", updateTable)
 	if _, err = tx.Exac(dropTable); err != nil {
 		return
@@ -338,13 +344,13 @@ func (tc *TextAttributeClass) Drop(ctx context.Context) (err error) {
 }
 
 // 构建查询
-func (tc *TextAttributeClass) BuildQuery(ctx context.Context, v map[string]interface{}) (string, error) {
+func (tc *TextAttributeClass) BuildQuery(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (string, error) {
 	// TODO
 	panic("un impl")
 }
 
 // 构建排序
-func (tc *TextAttributeClass) BuildSort(ctx context.Context, v map[string]interface{}) (string, error) {
+func (tc *TextAttributeClass) BuildSort(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (string, error) {
 	// TODO
 	panic("un impl")
 }

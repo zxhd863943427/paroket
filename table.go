@@ -19,7 +19,7 @@ END;`
 
 type tableImpl struct {
 	lock      *sync.Mutex
-	db        common.DB
+	db        common.Database
 	tableId   common.TableId
 	tableName string
 	fields    []common.AttributeClassId
@@ -27,7 +27,7 @@ type tableImpl struct {
 	version   int64
 }
 
-func NewTable(ctx context.Context, db common.DB) (table common.Table, err error) {
+func NewTable(ctx context.Context, db common.Database, tx tx.WriteTx) (table common.Table, err error) {
 	id, err := common.NewTableId()
 	if err != nil {
 		return
@@ -47,17 +47,6 @@ func NewTable(ctx context.Context, db common.DB) (table common.Table, err error)
 		version: 0,
 	}
 	table = t
-	tx, err := db.WriteTx(ctx)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
 
 	createTable := fmt.Sprintf(`
 	CREATE TABLE IF NOT EXISTS %s (
@@ -102,12 +91,8 @@ func NewTable(ctx context.Context, db common.DB) (table common.Table, err error)
 	return
 }
 
-func QueryTable(ctx context.Context, db common.DB, tid common.TableId) (table common.Table, err error) {
-	tx, err := db.ReadTx(ctx)
-	if err != nil {
-		return
-	}
-	defer tx.Commit()
+func QueryTable(ctx context.Context, db common.Database, tx tx.ReadTx, tid common.TableId) (table common.Table, err error) {
+
 	t := &tableImpl{
 		lock: &sync.Mutex{},
 		db:   db,
@@ -165,7 +150,7 @@ func (t *tableImpl) MetaInfo() utils.JSONMap {
 	return m
 }
 
-func (t *tableImpl) Set(ctx context.Context, v utils.JSONMap) (err error) {
+func (t *tableImpl) Set(ctx context.Context, tx tx.WriteTx, v utils.JSONMap) (err error) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	oldName := t.tableName
@@ -173,17 +158,10 @@ func (t *tableImpl) Set(ctx context.Context, v utils.JSONMap) (err error) {
 	for key := range t.metaInfo {
 		oldMetaInfo[key] = t.metaInfo[key]
 	}
-	tx, err := t.db.WriteTx(ctx)
-	if err != nil {
-		return
-	}
 	defer func() {
 		if err != nil {
-			tx.Rollback()
 			t.tableName = oldName
 			t.metaInfo = oldMetaInfo
-		} else {
-			tx.Commit()
 		}
 	}()
 
@@ -213,45 +191,47 @@ func (t *tableImpl) Set(ctx context.Context, v utils.JSONMap) (err error) {
 	return
 }
 
-func (t *tableImpl) FindId(ctx context.Context, oidList ...common.ObjectId) (objList []*common.Object, err error) {
+func oidListMarshal(oidList []common.ObjectId) string {
+	buffer := &bytes.Buffer{}
+	buffer.WriteString("[")
+	for idx, oid := range oidList {
+		if idx != 0 {
+			buffer.WriteString(",")
+		}
+		buffer.WriteString(fmt.Sprintf(`"%v"`, oid))
+	}
+	buffer.WriteString("]")
+	return buffer.String()
+}
+
+func (t *tableImpl) FindId(ctx context.Context, tx tx.ReadTx, oidList ...common.ObjectId) (objList []common.Object, err error) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	tx, err := t.db.ReadTx(ctx)
-	if err != nil {
-		return
-	}
-	defer tx.Commit()
+
 	dataTable, ok := t.metaInfo["data_table"].(string)
 	if !ok {
 		err = fmt.Errorf("table metainfo not found tablekey")
 	}
-	stmt := fmt.Sprintf(`SELECT object_id,data FROM %s WHERE object_id = ?`, dataTable)
-	objList = []*common.Object{}
-	for _, oid := range oidList {
-		obj := &common.Object{}
-		err = tx.QueryRow(stmt, oid).Scan(&obj.ObjectId, &obj.Data)
-		if err != nil {
-			return
-		}
-		objList = append(objList, obj)
+	stmt := fmt.Sprintf(`
+	SELECT object_id,data FROM %s 
+	WHERE object_id IN (
+	SELECT value FROM json_each(json('%s'))
+	)`, dataTable, oidListMarshal(oidList))
+	rows, err := tx.Query(stmt)
+	if err != nil {
+		return
+	}
+	objList, err = common.QueryTableObject(ctx, rows)
+	if err != nil {
+		return
 	}
 	return
 }
 
-func (t *tableImpl) Insert(ctx context.Context, oidList ...common.ObjectId) (err error) {
+func (t *tableImpl) Insert(ctx context.Context, tx tx.WriteTx, oidList ...common.ObjectId) (err error) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	tx, err := t.db.WriteTx(ctx)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
+
 	dataTable, ok := t.metaInfo["data_table"].(string)
 	if !ok {
 		err = fmt.Errorf("table metainfo not found tablekey")
@@ -261,54 +241,43 @@ func (t *tableImpl) Insert(ctx context.Context, oidList ...common.ObjectId) (err
     	(object_id)
   	VALUES
     	(?);`, dataTable)
-	updateStmt := fmt.Sprintf(`
-	UPDATE objects SET tables = jsonb_set(tables,'$."%s"',1) 
-	WHERE object_id = ?;`, dataTable)
+	InsertTableObjRelation := fmt.Sprintf(`
+	INSERT INTO object_to_tables
+		(object_id, table_id)
+	VALUES
+		(?,?)`)
 	for _, oid := range oidList {
 		if _, err = tx.Exac(stmt, oid); err != nil {
 			return
 		}
-		if _, err = tx.Exac(updateStmt, oid); err != nil {
+		if _, err = tx.Exac(InsertTableObjRelation, oid, t.tableId); err != nil {
 			return
 		}
 	}
 	return
 }
 
-func (t *tableImpl) Delete(ctx context.Context, oidList ...common.ObjectId) (err error) {
+func (t *tableImpl) Delete(ctx context.Context, tx tx.WriteTx, oidList ...common.ObjectId) (err error) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	tx, err := t.db.WriteTx(ctx)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
 	dataTable, ok := t.metaInfo["data_table"].(string)
 	if !ok {
 		err = fmt.Errorf("table metainfo not found dataTable")
 	}
-	stmt := fmt.Sprintf(`DELETE FROM %s WHERE object_id = ?;`, dataTable)
-	updateStmt := fmt.Sprintf(`
-	UPDATE objects SET tables = jsonb_remove(tables,'$."%s"') 
-	WHERE object_id = ?;`, dataTable)
+	stmt := fmt.Sprintf(`
+	DELETE FROM %s WHERE object_id IN (
+	SELECT value FROM json_each(json('%s'))
+	)`, dataTable, oidListMarshal(oidList))
+
 	for _, oid := range oidList {
 		if _, err = tx.Exac(stmt, oid); err != nil {
-			return
-		}
-		if _, err = tx.Exac(updateStmt, oid); err != nil {
 			return
 		}
 	}
 	return
 }
 
-func (t *tableImpl) AddAttributeClass(ctx context.Context, ac common.AttributeClass) (err error) {
+func (t *tableImpl) AddAttributeClass(ctx context.Context, tx tx.WriteTx, ac common.AttributeClass) (err error) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
@@ -331,24 +300,13 @@ func (t *tableImpl) AddAttributeClass(ctx context.Context, ac common.AttributeCl
 	acList := []common.AttributeClass{}
 	for _, acid := range t.fields {
 		var oldAc common.AttributeClass
-		oldAc, err = t.db.OpenAttributeClass(ctx, acid)
+		oldAc, err = t.db.OpenAttributeClass(ctx, tx, acid)
 		if err != nil {
 			return
 		}
 		acList = append(acList, oldAc)
 	}
 
-	tx, err := t.db.WriteTx(ctx)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
 	// 插入属性-表关联表
 	insertFields := `
 	INSERT INTO table_to_attribute_classes
@@ -359,7 +317,7 @@ func (t *tableImpl) AddAttributeClass(ctx context.Context, ac common.AttributeCl
 		return
 	}
 	// 创建属性的索引
-	metaInfo, err := ac.GetMetaInfo(ctx)
+	metaInfo, err := ac.GetMetaInfo(ctx, tx)
 	if err != nil {
 		return
 	}
@@ -401,7 +359,7 @@ func updateFtsIndex(ctx context.Context, t *tableImpl, acList []common.Attribute
 	lenAc := len(acList)
 	for idx, acItem := range acList {
 		var metaInfo utils.JSONMap
-		metaInfo, err = acItem.GetMetaInfo(ctx)
+		metaInfo, err = acItem.GetMetaInfo(ctx, tx)
 		if err != nil {
 			return
 		}
@@ -462,7 +420,7 @@ func isInFields(acidList []common.AttributeClassId, acid common.AttributeClassId
 	return false
 }
 
-func (t *tableImpl) DeleteAttributeClass(ctx context.Context, ac common.AttributeClass) (err error) {
+func (t *tableImpl) DeleteAttributeClass(ctx context.Context, tx tx.WriteTx, ac common.AttributeClass) (err error) {
 
 	// 先确认索引是否在fields中
 	if !isInFields(t.fields, ac.ClassId()) {
@@ -489,29 +447,17 @@ func (t *tableImpl) DeleteAttributeClass(ctx context.Context, ac common.Attribut
 	acList := []common.AttributeClass{}
 	for _, acid := range t.fields {
 		var oldAc common.AttributeClass
-		oldAc, err = t.db.OpenAttributeClass(ctx, acid)
+		oldAc, err = t.db.OpenAttributeClass(ctx, tx, acid)
 		if err != nil {
 			return
 		}
 		acList = append(acList, oldAc)
 	}
 
-	tx, err := t.db.WriteTx(ctx)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
-
 	// 删除属性关联表
 	insertFields := `
 	DELETE FROM table_to_attribute_classes
-	WHRER table_id = ? AND class_id = ?;`
+	WHERE table_id = ? AND class_id = ?;`
 	if _, err = tx.Exac(insertFields, t.tableId, ac.ClassId()); err != nil {
 		return
 	}
@@ -532,34 +478,22 @@ func (t *tableImpl) DeleteAttributeClass(ctx context.Context, ac common.Attribut
 	return
 }
 
-func (t *tableImpl) Find(ctx context.Context, query common.TableQuery) ([]*common.Object, error) {
+func (t *tableImpl) Find(ctx context.Context, tx tx.ReadTx, query common.TableQuery) ([]common.Object, error) {
 	// TODO
 	panic("un impl")
 }
 
-func (t *tableImpl) NewView(ctx context.Context) (common.View, error) {
+func (t *tableImpl) NewView(ctx context.Context, tx tx.WriteTx) (common.View, error) {
 	// TODO
 	panic("un impl")
 }
 
-func (t *tableImpl) GetViewData(ctx context.Context, view common.View, config common.QueryConfig) ([][]common.Attribute, error) {
+func (t *tableImpl) GetViewData(ctx context.Context, tx tx.ReadTx, view common.View, config common.QueryConfig) ([][]common.Attribute, error) {
 	// TODO
 	panic("un impl")
 }
 
-func (t *tableImpl) DropTable(ctx context.Context) (err error) {
-
-	tx, err := t.db.WriteTx(ctx)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		} else {
-			tx.Commit()
-		}
-	}()
+func (t *tableImpl) DropTable(ctx context.Context, tx tx.WriteTx) (err error) {
 
 	deleteFromtables := `DELETE FROM tables WHERE table_id = ?`
 	if _, err = tx.Exac(deleteFromtables, t.tableId); err != nil {
