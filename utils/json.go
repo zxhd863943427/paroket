@@ -26,5 +26,6 @@ func (jm JSONMap) Value() (driver.Value, error) {
 	if jm == nil {
 		return nil, nil
 	}
-	return json.Marshal(jm)
+	v, err := json.Marshal(jm)
+	return v, err
 }

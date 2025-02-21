@@ -14,9 +14,9 @@ type DB interface {
 
 	OpenAttributeClass(ctx context.Context, acid AttributeClassId) (ac AttributeClass, err error)
 
-	ListAttributeClass(ctx context.Context) (ac AttributeClass, err error)
+	ListAttributeClass(ctx context.Context) (acList []AttributeClass, err error)
 
-	DeleteAttributeClass(ctx context.Context) (err error)
+	DeleteAttributeClass(ctx context.Context, acid AttributeClassId) (err error)
 
 	// Object操作
 	CreateObject(ctx context.Context) (obj *Object, err error)
@@ -29,8 +29,6 @@ type DB interface {
 	CreateTable(ctx context.Context) (Table, error)
 
 	OpenTable(ctx context.Context, tid TableId) (Table, error)
-
-	Table(ctx context.Context, tid TableId) (Table, error)
 
 	DeleteTable(ctx context.Context, tid TableId) error
 

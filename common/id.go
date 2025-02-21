@@ -29,6 +29,11 @@ func (tid TableId) String() string {
 	return guid.String()
 }
 
+func TableIdFromStr(s string) (TableId, error) {
+	guid, err := xid.FromString(s)
+	return TableId(guid), err
+}
+
 func NewTableId() (TableId, error) {
 	guid := xid.New()
 	return TableId(guid), nil

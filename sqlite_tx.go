@@ -1,31 +1,43 @@
 package paroket
 
-import "database/sql"
+import (
+	"context"
+	"database/sql"
+)
 
 type sqliteReadTx struct {
-	tx *sql.Tx
+	ctx context.Context
+	tx  *sql.Tx
 }
 
 type sqliteWriteTx struct {
-	tx *sql.Tx
+	ctx context.Context
+	tx  *sql.Tx
 }
 
 func (tx *sqliteReadTx) Query(stmt string, argList ...any) (*sql.Rows, error) {
-	return tx.tx.Query(stmt, argList...)
+	return tx.tx.QueryContext(tx.ctx, stmt, argList...)
 }
 func (tx *sqliteReadTx) QueryRow(stmt string, argList ...any) *sql.Row {
-	return tx.tx.QueryRow(stmt, argList...)
+	return tx.tx.QueryRowContext(tx.ctx, stmt, argList...)
+}
+func (tx *sqliteReadTx) Prepare(stmt string) (*sql.Stmt, error) {
+	return tx.tx.PrepareContext(tx.ctx, stmt)
 }
 func (tx *sqliteReadTx) Commit() error {
 	return tx.tx.Commit()
 }
 
 func (tx *sqliteWriteTx) Query(stmt string, argList ...any) (*sql.Rows, error) {
-	return tx.tx.Query(stmt, argList...)
+	return tx.tx.QueryContext(tx.ctx, stmt, argList...)
 }
 
 func (tx *sqliteWriteTx) QueryRow(stmt string, argList ...any) *sql.Row {
-	return tx.tx.QueryRow(stmt, argList...)
+	return tx.tx.QueryRowContext(tx.ctx, stmt, argList...)
+}
+
+func (tx *sqliteWriteTx) Prepare(stmt string) (*sql.Stmt, error) {
+	return tx.tx.PrepareContext(tx.ctx, stmt)
 }
 
 func (tx *sqliteWriteTx) Commit() error {
@@ -33,7 +45,7 @@ func (tx *sqliteWriteTx) Commit() error {
 }
 
 func (tx *sqliteWriteTx) Exac(stmt string, argList ...any) (sql.Result, error) {
-	return tx.tx.Exec(stmt, argList...)
+	return tx.tx.ExecContext(tx.ctx, stmt, argList...)
 }
 
 func (tx *sqliteWriteTx) Rollback() error {

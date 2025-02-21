@@ -8,7 +8,7 @@ import (
 
 type Object struct {
 	ObjectId ObjectId
-	Value    []byte
+	Data     []byte
 }
 type ObjectRelationTable struct {
 	Tables utils.JSONMap
@@ -18,7 +18,7 @@ func NewObject() (obj *Object, err error) {
 	guid := xid.New()
 	obj = &Object{
 		ObjectId: ObjectId(guid),
-		Value:    []byte{},
+		Data:     []byte("{}"),
 	}
 	return
 }

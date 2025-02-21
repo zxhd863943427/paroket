@@ -1,93 +1,70 @@
 package attribute
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"paroket/common"
-	"paroket/object"
+	"paroket/tx"
 	"paroket/utils"
-	"time"
 
-	"github.com/rs/xid"
+	"github.com/pkg/errors"
 )
 
 // 公用实现
 type attributeClass struct {
-	db                common.DB
-	classId           common.AttributeClassId
-	attributeName     string
-	attributeType     AttributeType
-	attributeMetaInfo utils.JSONMap
-	impl              attributeClassImpl
+	db       common.DB
+	id       common.AttributeClassId
+	name     string
+	key      string
+	attrType common.AttributeType
+	metaInfo utils.JSONMap
 }
 
-type attributeClassFieldMap struct{}
-
-func (am attributeClassFieldMap) ClassId() string           { return `class_id` }
-func (am attributeClassFieldMap) AttributeName() string     { return `attribute_name` }
-func (am attributeClassFieldMap) AttributeType() string     { return `attribute_type` }
-func (am attributeClassFieldMap) AttributeMetaInfo() string { return `attribute_meta_info` }
-
-var AttributeClassFieldMap = attributeClassFieldMap{}
-
-func AttributeClassField() string {
-	return fmt.Sprintf(
-		` %s, %s, %s, %s `,
-		AttributeClassFieldMap.ClassId(),
-		AttributeClassFieldMap.AttributeName(),
-		AttributeClassFieldMap.AttributeType(),
-		AttributeClassFieldMap.AttributeMetaInfo(),
-	)
-}
-
-func InsertField() string {
-	return `(?, ?, ?, ?)`
-}
-
-func NewAttributeClass(attributbuteType AttributeType) (ac AttributeClass, err error) {
-	guid := xid.New()
-	cid := AttributeClassId(guid)
+func NewAttributeClass(ctx context.Context, db common.DB, attributbuteType common.AttributeType) (attr common.AttributeClass, err error) {
 	switch attributbuteType {
 	case AttributeTypeText:
-		act := &attributeClass{
-			classId:           cid,
-			attributeName:     "untitled",
-			attributeType:     AttributeTypeText,
-			attributeMetaInfo: map[string]interface{}{},
-		}
-		act.impl = &attribute.TextAttributeClass{AttributeClass: ac}
-		ac = act
+		return newTextAttributeClass(ctx, db)
 	default:
-		err = fmt.Errorf("unsupport attribute type of %s", attributbuteType)
+		return nil, fmt.Errorf("unsupport type %s", attributbuteType)
+	}
+}
+
+func QueryAttributeClass(ctx context.Context, db common.DB, acid common.AttributeClassId) (ac common.AttributeClass, err error) {
+	var acProto attributeClass
+	acProto.db = db
+	func() {
+		var tx tx.ReadTx
+		tx, err = db.ReadTx(ctx)
+		if err != nil {
+			return
+		}
+		defer tx.Commit()
+
+		stmt := `SELECT 
+	  class_id, attribute_name, attribute_key, attribute_type, attribute_meta_info 
+	  FROM attribute_classes
+	  WHERE
+	  class_id = ?`
+		err = tx.QueryRow(stmt, acid).Scan(&acProto.id, &acProto.name, &acProto.key, &acProto.attrType, &acProto.metaInfo)
+		if err == sql.ErrNoRows {
+			err = errors.Wrapf(err, "%w", common.ErrAttributeClassNotFound)
+		}
+	}()
+	if err != nil {
 		return
 	}
 
-	return
+	switch acProto.attrType {
+	case AttributeTypeText:
+		ac, err = parseTextAttributeClass(ctx, &acProto)
+		return
+	default:
+		err = fmt.Errorf("unsupport type form database")
+		return
+	}
 }
-
-func (ac *attributeClass) SearchByID(tx *sql.Tx, objId object.ObjectId) (attr Attribute, err error) {
-	return ac.impl.SearchByID(tx, objId)
-}
-
-func (ac *attributeClass) NewAttribute() (attr Attribute, err error) {
-	return ac.impl.NewAttribute()
-}
-
-func (acid AttributeClassId) String() string {
-	guid := xid.ID(acid)
-	return guid.String()
-}
-
-type AttributeType string
 
 const (
-	AttributeTypeText AttributeType = "text"
+	AttributeTypeText common.AttributeType = "text"
 )
-
-type AttributeStore struct {
-	ObjectId      []byte
-	AttributeId   AttributeId
-	AttributeType string
-	UpdateDate    time.Time
-	Data          string
-}
