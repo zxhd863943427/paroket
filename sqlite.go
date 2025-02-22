@@ -39,17 +39,10 @@ func NewSqliteImpl() (s common.DB) {
 	return
 }
 
-type sqliteOp struct {
-	op    int
-	db    string
-	table string
-	rowid int64
-}
+var _ = registerSqliteHook()
 
-var pipe = registerSqliteHook()
-
-func registerSqliteHook() (pipe chan *sqliteOp) {
-	pipe = make(chan *sqliteOp)
+func registerSqliteHook() (err error) {
+	// pipe = make(chan *sqliteOp)
 
 	sql.Register("sqlite3_extend_by_paroket",
 		&sqlite3.SQLiteDriver{
@@ -65,48 +58,9 @@ func registerSqliteHook() (pipe chan *sqliteOp) {
 				for key, impl := range aggrFuncMap {
 					conn.RegisterAggregator(key, impl.impl, impl.pure)
 				}
-				// 注册update hook
-				conn.RegisterUpdateHook(func(op int, db string, table string, rowid int64) {
-					o := &sqliteOp{
-						op:    op,
-						db:    db,
-						table: table,
-						rowid: rowid,
-					}
-					go func() {
-						pipe <- o
-					}()
-				})
 				return nil
 			},
 		})
-	return
-}
-
-func updateTableHook(s *SqliteImpl, ctx context.Context, pipe chan *sqliteOp) {
-	for {
-		op := <-pipe
-		switch op.op {
-		case sqlite3.SQLITE_UPDATE:
-			if op.table == "objects" {
-				_, err := tryGetTx(s, ctx)
-				if err != nil {
-					continue
-				}
-				fmt.Println(op)
-			}
-		}
-	}
-}
-
-func tryGetTx(s *SqliteImpl, ctx context.Context) (tx tx.WriteTx, err error) {
-	cnt := 10
-	for i := 0; i < cnt; i++ {
-		tx, err = s.WriteTx(ctx)
-		if err != nil {
-			break
-		}
-	}
 	return
 }
 
@@ -115,7 +69,6 @@ func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 	defer s.lock.Unlock()
 
 	db, err := sql.Open("sqlite3_extend_by_paroket", dbPath)
-	go updateTableHook(s, ctx, pipe)
 	if err != nil {
 		return
 	}
