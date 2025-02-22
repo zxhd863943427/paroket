@@ -113,10 +113,14 @@ func TestSqliteImpl(t *testing.T) {
 		tx, err := sqlite.WriteTx(ctx)
 		assert.NoError(t, err)
 		defer tx.Commit()
+		acList := []common.AttributeClass{}
+		acIdMap := map[common.AttributeClassId]bool{}
 		// 创建新属性类
 		for _, acType := range testAttributeType {
 			ac, err := sqlite.CreateAttributeClass(ctx, tx, acType)
 			assert.NoError(t, err)
+			acList = append(acList, ac)
+			acIdMap[ac.ClassId()] = true
 
 			// 验证属性类更新表是否创建
 			metainfo, err := ac.GetMetaInfo(ctx, tx)
@@ -140,6 +144,24 @@ func TestSqliteImpl(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, ac.Name(), nac.Name())
 
+		}
+		qAcList, err := sqlite.ListAttributeClass(ctx, tx)
+		assert.NoError(t, err)
+		qAcMap := map[common.AttributeClassId]bool{}
+		for _, qac := range qAcList {
+			qAcMap[qac.ClassId()] = true
+		}
+		for key := range acIdMap {
+			assert.True(t, qAcMap[key])
+		}
+
+		for _, ac := range acList {
+			var readName string
+			metainfo, err := ac.GetMetaInfo(ctx, tx)
+			assert.NoError(t, err)
+			tableName, ok := metainfo["updated_table"].(string)
+			assert.True(t, ok)
+			assert.NoError(t, err)
 			// 删除属性类
 			err = sqlite.DeleteAttributeClass(ctx, tx, ac.ClassId())
 			assert.NoError(t, err)
@@ -152,7 +174,6 @@ func TestSqliteImpl(t *testing.T) {
 			).Scan(&readName)
 			assert.Equal(t, sql.ErrNoRows, err)
 		}
-
 	})
 
 	// 测试表操作
