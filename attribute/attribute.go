@@ -7,8 +7,6 @@ import (
 	"paroket/common"
 	"paroket/tx"
 	"paroket/utils"
-
-	"github.com/pkg/errors"
 )
 
 // 公用实现
@@ -41,7 +39,7 @@ func QueryAttributeClass(ctx context.Context, db common.Database, tx tx.ReadTx, 
 	  WHERE class_id = ?`
 		err = tx.QueryRow(stmt, acid).Scan(&acProto.id, &acProto.name, &acProto.key, &acProto.attrType, &acProto.metaInfo)
 		if err == sql.ErrNoRows {
-			err = errors.Wrapf(err, "%w", common.ErrAttributeClassNotFound)
+			err = fmt.Errorf("%w:%w", common.ErrAttributeClassNotFound, sql.ErrNoRows)
 		}
 	}()
 	if err != nil {
