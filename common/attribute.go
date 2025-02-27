@@ -8,6 +8,7 @@ import (
 
 type AttributeClass interface {
 	Name() string
+	Key() string
 	Type() AttributeType
 	ClassId() AttributeClassId
 	GetMetaInfo(ctx context.Context, tx tx.ReadTx) (v utils.JSONMap, err error)

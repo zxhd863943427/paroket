@@ -14,7 +14,7 @@ import (
 )
 
 type TextAttributeClass struct {
-	attributeClass
+	AttributeClassInfo
 }
 
 type TextAttribute struct {
@@ -37,7 +37,7 @@ func newTextAttributeClass(_ context.Context, db common.Database, tx tx.WriteTx)
 	updateTable := fmt.Sprintf(`text_%v`, id)
 
 	act := &TextAttributeClass{
-		attributeClass{
+		AttributeClassInfo{
 			db:       db,
 			id:       id,
 			name:     "text",
@@ -72,19 +72,9 @@ CREATE TABLE IF NOT EXISTS %v(
 	return
 }
 
-func parseTextAttributeClass(_ context.Context, acProto *attributeClass) (ac common.AttributeClass, err error) {
+func parseTextAttributeClass(_ context.Context, acProto *AttributeClassInfo) (ac common.AttributeClass, err error) {
 	ac = &TextAttributeClass{*acProto}
 	return
-}
-
-func (tc *TextAttributeClass) Name() string {
-	return tc.name
-}
-func (tc *TextAttributeClass) Type() common.AttributeType {
-	return tc.attrType
-}
-func (tc *TextAttributeClass) ClassId() common.AttributeClassId {
-	return tc.id
 }
 
 func (tc *TextAttributeClass) GetMetaInfo(ctx context.Context, tx tx.ReadTx) (v utils.JSONMap, err error) {
