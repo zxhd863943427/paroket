@@ -19,41 +19,61 @@ type attributeClass struct {
 	metaInfo utils.JSONMap
 }
 
+type AttributeClassInterface struct {
+	Create func(ctx context.Context, db common.Database, tx tx.WriteTx) (attr common.AttributeClass, err error)
+	Parse  func(ctx context.Context, acProto *attributeClass) (ac common.AttributeClass, err error)
+}
+
+var AttributeClassMap = map[common.AttributeType]*AttributeClassInterface{}
+
+func init() {
+	RegisterAttributeClass(AttributeTypeText, newTextAttributeClass, parseTextAttributeClass)
+}
+
+func RegisterAttributeClass(attrType common.AttributeType,
+	create func(ctx context.Context, db common.Database, tx tx.WriteTx) (attr common.AttributeClass, err error),
+	parse func(ctx context.Context, acProto *attributeClass) (ac common.AttributeClass, err error),
+) (err error) {
+	if create == nil {
+		err = fmt.Errorf("attributeClass create is nil")
+		return
+	}
+	if parse == nil {
+		err = fmt.Errorf("attributeClass parse is nil")
+		return
+	}
+	AttributeClassMap[attrType] = &AttributeClassInterface{
+		Create: create,
+		Parse:  parse,
+	}
+	return
+}
+
 func NewAttributeClass(ctx context.Context, db common.Database, tx tx.WriteTx, attributbuteType common.AttributeType) (attr common.AttributeClass, err error) {
-	switch attributbuteType {
-	case AttributeTypeText:
-		return newTextAttributeClass(ctx, db, tx)
-	default:
+	acInterface, ok := AttributeClassMap[attributbuteType]
+	if !ok {
 		return nil, fmt.Errorf("unsupport type %s", attributbuteType)
 	}
+	return acInterface.Create(ctx, db, tx)
 }
 
 func QueryAttributeClass(ctx context.Context, db common.Database, tx tx.ReadTx, acid common.AttributeClassId) (ac common.AttributeClass, err error) {
 	var acProto attributeClass
 	acProto.db = db
-	func() {
-
-		stmt := `SELECT 
+	stmt := `SELECT 
 	  class_id, attribute_name, attribute_key, attribute_type, attribute_meta_info 
 	  FROM attribute_classes
 	  WHERE class_id = ?`
-		err = tx.QueryRow(stmt, acid).Scan(&acProto.id, &acProto.name, &acProto.key, &acProto.attrType, &acProto.metaInfo)
-		if err == sql.ErrNoRows {
-			err = fmt.Errorf("%w:%w", common.ErrAttributeClassNotFound, sql.ErrNoRows)
-		}
-	}()
-	if err != nil {
+	err = tx.QueryRow(stmt, acid).Scan(&acProto.id, &acProto.name, &acProto.key, &acProto.attrType, &acProto.metaInfo)
+	if err == sql.ErrNoRows {
+		err = fmt.Errorf("%w:%w", common.ErrAttributeClassNotFound, sql.ErrNoRows)
 		return
 	}
-
-	switch acProto.attrType {
-	case AttributeTypeText:
-		ac, err = parseTextAttributeClass(ctx, &acProto)
-		return
-	default:
-		err = fmt.Errorf("unsupport type form database")
-		return
+	acInterface, ok := AttributeClassMap[acProto.attrType]
+	if !ok {
+		return nil, fmt.Errorf("unsupport type form database %s", acProto.attrType)
 	}
+	return acInterface.Parse(ctx, &acProto)
 }
 
 const (
