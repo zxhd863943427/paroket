@@ -26,7 +26,7 @@ type viewImpl struct {
 	offset    int
 }
 
-func newView(ctx context.Context, tx tx.WriteTx, db common.Database, table common.Table) (view common.View, err error) {
+func newView(_ context.Context, tx tx.WriteTx, db common.Database, table common.Table) (view common.View, err error) {
 
 	fields := []common.AttributeClassId{}
 	queryFields := `
@@ -61,9 +61,6 @@ func newView(ctx context.Context, tx tx.WriteTx, db common.Database, table commo
 		offset: 0,
 	}
 
-	if err != nil {
-		return
-	}
 	insertView := `INSERT INTO 
 	table_views (table_id, view_id, query)
 	VALUES
@@ -75,7 +72,7 @@ func newView(ctx context.Context, tx tx.WriteTx, db common.Database, table commo
 	return
 }
 
-func queryView(ctx context.Context, tx tx.ReadTx, db common.Database, table common.Table, vid common.ViewId) (view common.View, err error) {
+func queryView(_ context.Context, tx tx.ReadTx, db common.Database, table common.Table, vid common.ViewId) (view common.View, err error) {
 	v := &viewImpl{
 		viewId: vid,
 		db:     db,

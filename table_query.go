@@ -19,21 +19,10 @@ type queryImpl struct {
 	offset int
 }
 
-type Operator int
-
-const (
-	opAnd Operator = iota
-	opOr
-	opNot
-
-	_opVal
-)
-
 var (
-	opBytesPrefix = "$"
-	opBytesAnd    = "$and"
-	opBytesOr     = "$or"
-	opBytesNot    = "$not"
+	opBytesAnd = "$and"
+	opBytesOr  = "$or"
+	opBytesNot = "$not"
 )
 
 type filterNodeType string
@@ -206,6 +195,7 @@ func (qb *queryImpl) ParseOrder(ctx context.Context, tx tx.ReadTx, order string)
 		acidStr, ok := parseOrderData["field"].(string)
 		if !ok {
 			err = fmt.Errorf(" order item no found order field")
+			return
 		}
 		var acid common.AttributeClassId
 		if err = acid.Scan(acidStr); err != nil {
