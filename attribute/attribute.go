@@ -28,6 +28,9 @@ var AttributeClassMap = map[common.AttributeType]*AttributeClassInterface{}
 
 func init() {
 	RegisterAttributeClass(AttributeTypeText, newTextAttributeClass, parseTextAttributeClass)
+
+	RegisterAttributeClass(AttributeTypeNumber, newNumberAttributeClass, parseNumberAttributeClass)
+
 }
 
 func RegisterAttributeClass(attrType common.AttributeType,
@@ -93,5 +96,6 @@ func (t *AttributeClassInfo) Key() string {
 }
 
 const (
-	AttributeTypeText common.AttributeType = "text"
+	AttributeTypeText   common.AttributeType = "text"
+	AttributeTypeNumber common.AttributeType = "number"
 )

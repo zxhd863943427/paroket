@@ -8,6 +8,7 @@ import (
 	"paroket"
 	"paroket/attribute"
 	"paroket/common"
+	"paroket/tx"
 	"paroket/utils"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 
 var testAttributeType = []common.AttributeType{
 	attribute.AttributeTypeText,
+	attribute.AttributeTypeNumber,
 }
 
 func TestSqliteImpl(t *testing.T) {
@@ -403,14 +405,8 @@ func TestSqliteImpl(t *testing.T) {
 		//添加属性到对象
 		for i, oid := range objIdList {
 			for j, ac := range acList {
-				var attr common.Attribute
-				attr, err = ac.Insert(ctx, tx, oid)
+				err = SetValue(t, ctx, tx, ac, oid, i, j)
 				assert.NoError(t, err)
-				nvalue := fmt.Sprintf("测试_%d_%d", j, i)
-				attr.SetValue(map[string]interface{}{
-					"value": nvalue,
-				})
-				ac.Update(ctx, tx, oid, attr)
 
 			}
 		}
@@ -464,4 +460,28 @@ func TestSqliteImpl(t *testing.T) {
 		fmt.Println(string(pretty.Pretty([]byte(resultStr))))
 		fmt.Println("测试")
 	})
+}
+
+func SetValue(t *testing.T, ctx context.Context, tx tx.WriteTx, ac common.AttributeClass, oid common.ObjectId, i, j int) (err error) {
+	attr, err := ac.Insert(ctx, tx, oid)
+	assert.NoError(t, err)
+	switch ac.Type() {
+	case attribute.AttributeTypeText:
+		nvalue := fmt.Sprintf("测试_%d_%d", j, i)
+		err = attr.SetValue(map[string]interface{}{
+			"value": nvalue,
+		})
+	case attribute.AttributeTypeNumber:
+		nvalue := 1000*j + i
+		err = attr.SetValue(map[string]interface{}{
+			"value": nvalue,
+		})
+	default:
+		err = fmt.Errorf("unsupport type")
+		return
+	}
+	assert.NoError(t, err)
+	err = ac.Update(ctx, tx, oid, attr)
+	assert.NoError(t, err)
+	return
 }
