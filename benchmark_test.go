@@ -17,10 +17,12 @@ import (
 
 var testAttrNum = 30
 var perAttrNum = 8
-var testObjNum = 100 * 100
+var testObjNum = 20 * 100 * 100
 var testTableNum = 2
 
 var logSapce = 10
+
+const ftsCandle = `一个全文搜索探针`
 
 type timeTicker struct {
 	totalTicker map[string]time.Time
@@ -124,7 +126,10 @@ func TestBenchmark(t *testing.T) {
 				attr, err := ac.Insert(ctx, tx, obj.ObjectId())
 				assert.NoError(t, err)
 
-				newValue := fmt.Sprintf("test_%d_%d", jdx, rand.Int31n(int32(testObjNum)))
+				newValue := fmt.Sprintf("test_%020d_%020d", jdx, rand.Int31n(int32(testObjNum)))
+				if rand.Intn(testObjNum) > (testObjNum*99)/100 {
+					newValue = ftsCandle
+				}
 				attr.SetValue(map[string]interface{}{"value": newValue})
 				ac.Update(ctx, tx, obj.ObjectId(), attr)
 			}
@@ -139,7 +144,7 @@ func TestBenchmark(t *testing.T) {
 
 func TestQueryBenchmark(t *testing.T) {
 	ticker := newTimeTicker()
-	ticker.start("query item")
+
 	dbPath := "./testdata/test_benchmark.db"
 	// dbPath := ":memory:"
 
@@ -150,7 +155,7 @@ func TestQueryBenchmark(t *testing.T) {
 		fmt.Println("create db err:", err)
 		return
 	}
-	tx, err := db.ReadTx(ctx)
+	tx, err := db.WriteTx(ctx)
 	assert.NoError(t, err)
 	defer tx.Commit()
 
@@ -194,10 +199,12 @@ func TestQueryBenchmark(t *testing.T) {
 	assert.NoError(t, err)
 	valuePath, ok := metainfo["json_value_path"]
 	assert.True(t, ok)
-	queryBuffer.WriteString(fmt.Sprintf(" ORDER BY data ->> '%s'", valuePath))
+	queryBuffer.WriteString(fmt.Sprintf(" ORDER BY data ->> '%s' desc", valuePath))
 
 	queryStmt := queryBuffer.String()
 	fmt.Println(queryStmt)
+
+	ticker.start("query item")
 	rows, err = tx.Query(queryStmt)
 	assert.NoError(t, err)
 
@@ -207,10 +214,98 @@ func TestQueryBenchmark(t *testing.T) {
 	assert.NoError(t, err)
 
 	fmt.Println("query item num:", len(objList))
-	if len(objList) < 50 {
+	if len(objList) < 10 {
 		for _, obj := range objList {
 			fmt.Println(obj.ObjectId(), string(obj.Data()))
 		}
 	}
 
+	// 查询语法查询
+	table, err := db.OpenTable(ctx, tx, tid)
+	assert.NoError(t, err)
+	view, err := table.NewView(ctx, tx)
+	assert.NoError(t, err)
+
+	queryJsonBuffer := &bytes.Buffer{}
+	queryJsonBuffer.WriteString(`{"$and":[`)
+	for idx, ac := range acList {
+		if idx > acLen/2 || idx > 2 {
+			break
+		}
+		if idx != 0 {
+			queryJsonBuffer.WriteString(",")
+		}
+
+		cond := fmt.Sprintf(`{"%v":{"like":"%d"}}`, ac.ClassId(), idx+1)
+		queryJsonBuffer.WriteString(cond)
+
+	}
+	queryJsonBuffer.WriteString(`]}`)
+	queryJson := queryJsonBuffer.String()
+	err = view.Filter(tx, queryJson)
+	assert.NoError(t, err)
+	view.Limit(1000)
+	lastAc = acList[acLen-1]
+	order := fmt.Sprintf(`[{"field":"%v","mode":"desc"}]`, lastAc.ClassId())
+	err = view.SortBy(tx, order)
+	assert.NoError(t, err)
+
+	ticker.start("query use view")
+	tableResult, err := view.Query(ctx, tx)
+	assert.NoError(t, err)
+	ticker.log("query use view")
+
+	nobjectList := tableResult.Raw()
+	assert.Equal(t, len(objList), len(nobjectList))
+	for idx := range objList {
+		assert.Equal(t, objList[idx].ObjectId().String(), nobjectList[idx].ObjectId().String())
+	}
+
+	// 测试fts
+
+	assert.NoError(t, err)
+
+	queryJsonFtsBuffer := &bytes.Buffer{}
+	queryJsonFtsBuffer.WriteString(`{"$and":[`)
+	for idx, ac := range acList {
+		if idx > acLen/2 || idx > 2 {
+			break
+		}
+		if idx != 0 {
+			queryJsonFtsBuffer.WriteString(",")
+		}
+
+		cond := fmt.Sprintf(`{"%v":{"like":"%d"}}`, ac.ClassId(), idx+1)
+		queryJsonFtsBuffer.WriteString(cond)
+
+	}
+	queryJsonFtsBuffer.WriteString(",")
+	cond := fmt.Sprintf(`{"$fts":{"search":"%s"}}`, ftsCandle)
+	queryJsonFtsBuffer.WriteString(cond)
+	queryJsonFtsBuffer.WriteString(`]}`)
+	queryJson = queryJsonFtsBuffer.String()
+	err = view.Filter(tx, queryJson)
+	assert.NoError(t, err)
+	view.Limit(1000)
+	lastAc = acList[acLen-1]
+	order = fmt.Sprintf(`[{"field":"%v","mode":"desc"}]`, lastAc.ClassId())
+	err = view.SortBy(tx, order)
+	assert.NoError(t, err)
+
+	ticker.start("query fts use view")
+	tableResult, err = view.Query(ctx, tx)
+	assert.NoError(t, err)
+	ticker.log("query fts use view")
+
+	nobjectList = tableResult.Raw()
+	fmt.Println("query fts item num:", len(nobjectList))
+	objectLogSpace := len(nobjectList) / 3
+	for idx, obj := range nobjectList {
+		if idx%objectLogSpace != 0 {
+			continue
+		}
+		fmt.Println(obj.ObjectId(), string(obj.Data()))
+		fmt.Println("")
+
+	}
 }
