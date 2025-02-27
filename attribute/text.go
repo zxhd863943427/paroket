@@ -343,16 +343,98 @@ func (tc *TextAttributeClass) Drop(ctx context.Context, tx tx.WriteTx) (err erro
 	return
 }
 
+func (tc *TextAttributeClass) FromObject(obj common.Object) (attr common.Attribute, err error) {
+	attrText := &TextAttribute{
+		class: tc,
+		value: "",
+	}
+	attr = attrText
+
+	data := obj.Data()
+	attrPath := fmt.Sprintf(`%v`, tc.id)
+	attrData := gjson.Get(string(data), attrPath)
+	if attrData.Type == gjson.Null {
+		return
+	}
+
+	if err = attrText.Parse(attrData.Raw); err != nil {
+		return
+	}
+
+	return
+}
+
 // 构建查询
-func (tc *TextAttributeClass) BuildQuery(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (string, error) {
-	// TODO
-	panic("un impl")
+func (tc *TextAttributeClass) BuildQuery(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (stmt string, err error) {
+	if _, ok := v["op"].(string); !ok {
+		err = fmt.Errorf("invaild query value:%s", v)
+		return
+	}
+	if _, ok := v["value"].(string); !ok {
+		err = fmt.Errorf("invaild query value:%s", v)
+		return
+	}
+	op := v["op"].(string)
+	value := v["value"].(string)
+
+	jsonPath, ok := tc.metaInfo["json_value_path"].(string)
+	if !ok {
+		err = fmt.Errorf("TextAttribute metainfo dont have json_value_path")
+		return
+	}
+	switch op {
+	case "like":
+		stmt = fmt.Sprintf(
+			`(data ->> '%s' LIKE '%s%%' OR data ->> '%s' LIKE '%%%s%%')`,
+			jsonPath,
+			value,
+			jsonPath,
+			value,
+		)
+	case "unlike":
+		stmt = fmt.Sprintf(
+			`(data ->> '%s' NOT LIKE '%%%s%%')`,
+			jsonPath,
+			value,
+		)
+	case "equal":
+		stmt = fmt.Sprintf(
+			`(data ->> '%s' = '%s')`,
+			jsonPath,
+			value,
+		)
+	case "unequal":
+		stmt = fmt.Sprintf(
+			`(data ->> '%s' != '%s')`,
+			jsonPath,
+			value,
+		)
+	default:
+		err = fmt.Errorf("unsupport op:%s", op)
+	}
+	return
 }
 
 // 构建排序
-func (tc *TextAttributeClass) BuildSort(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (string, error) {
-	// TODO
-	panic("un impl")
+func (tc *TextAttributeClass) BuildSort(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (stmt string, err error) {
+	if _, ok := v["mode"].(string); !ok {
+		err = fmt.Errorf("invaild sort value:%s", v)
+		return
+	}
+	mode := v["mode"].(string)
+	jsonPath, ok := tc.metaInfo["json_value_path"].(string)
+	if !ok {
+		err = fmt.Errorf("TextAttribute metainfo dont have json_value_path")
+		return
+	}
+	switch mode {
+	case "asc":
+		stmt = fmt.Sprintf("data ->> '%s' ASC", jsonPath)
+	case "desc":
+		stmt = fmt.Sprintf("data ->> '%s' DESC", jsonPath)
+
+	}
+	return
 }
 
 func (t *TextAttribute) GetJSON() string {

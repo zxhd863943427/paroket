@@ -17,11 +17,12 @@ type AttributeClass interface {
 	Update(ctx context.Context, tx tx.WriteTx, oid ObjectId, attr Attribute) (err error)
 	Delete(ctx context.Context, tx tx.WriteTx, oid ObjectId) (err error)
 	Drop(ctx context.Context, tx tx.WriteTx) (err error) //删除属性类
+	FromObject(obj Object) (Attribute, error)            //从Object中解析中attribute
 
 	//构建查询
-	BuildQuery(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (string, error)
+	FilterField
 	//构建排序
-	BuildSort(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (string, error)
+	SortField
 }
 
 type Attribute interface {

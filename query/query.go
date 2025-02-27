@@ -2,50 +2,42 @@ package query
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"paroket/common"
+	"paroket/tx"
 )
 
-type QueryField interface {
-	BuildQuery(v map[string]interface{}) (string, error)
+type filterField interface {
+	BuildQuery(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (string, error)
 }
 
 type SortField interface {
-	BuildSort(v map[string]interface{}) (string, error)
+	BuildSort(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (string, error)
 }
 
-type QueryMode string
-
-const (
-	TableMode  QueryMode = "table"
-	ObjectMode QueryMode = "object"
-	attribute  QueryMode = "attribute"
-)
-
-type Query struct {
-	tableId common.TableId
-	mode    QueryMode
-	fields  []string
-	query   *QueryNode
-	sort    []SortNode
-	limit   int
-	offset  int
+type queryImpl struct {
+	table  common.Table
+	filter *filterNode
+	sort   []SortNode
+	limit  int
+	offset int
 }
 
-type QueryNodeType string
+type filterNodeType string
 
 const (
-	Connection QueryNodeType = "connection"
-	Operation  QueryNodeType = "operation"
+	Connection filterNodeType = "connection"
+	Operation  filterNodeType = "operation"
 )
 
-type QueryNode struct {
-	Type       QueryNodeType
-	ChildNodes []QueryNode
-	Op         string
-	Connect    string
-	QueryField QueryField
-	QueryValue map[string]interface{}
+type filterNode struct {
+	Type        filterNodeType
+	ChildNodes  []filterNode
+	Op          string
+	Connect     string
+	filterField filterField
+	filterValue map[string]interface{}
 }
 
 type SortNode struct {
@@ -53,47 +45,38 @@ type SortNode struct {
 	SortValue map[string]interface{}
 }
 
-func NewQueryBuilder(tid common.TableId) *Query {
-	return &Query{
-		tableId: tid,
-		fields:  []string{},
-		sort:    []SortNode{},
-		limit:   50,
-		offset:  0,
+func NewQueryBuilder(table common.Table) common.QueryBuilder {
+	return &queryImpl{
+		table:  table,
+		sort:   []SortNode{},
+		limit:  50,
+		offset: 0,
 	}
 }
 
-func (qb *Query) Offset(offset int) *Query {
-	qb.offset = offset
+func (qb *queryImpl) ParseFilter(ctx context.Context, tx tx.ReadTx, filter string) (err error) {
+	return
+}
+func (qb *queryImpl) ParseOrder(ctx context.Context, tx tx.ReadTx, order string) (err error) {
+	return
+}
+
+func (qb *queryImpl) setQuery(q *filterNode) *queryImpl {
+	qb.filter = q
 	return qb
 }
 
-func (qb *Query) Limit(limit int) *Query {
-	qb.limit = limit
-	return qb
-}
-
-func (qb *Query) AddFields(flist []string) *Query {
-	qb.fields = append(qb.fields, flist...)
-	return qb
-}
-
-func (qb *Query) AddQuery(q *QueryNode) *Query {
-	qb.query = q
-	return qb
-}
-
-func (qb *Query) AddSort(slist []SortNode) *Query {
+func (qb *queryImpl) addSort(slist []SortNode) *queryImpl {
 	qb.sort = append(qb.sort, slist...)
 	return qb
 }
 
-func (qb *Query) buildQuery() (stmt string, err error) {
+func (qb *queryImpl) BuildFilter(ctx context.Context, tx tx.ReadTx) (stmt string, err error) {
 	stmt = ""
-	if qb.query == nil {
+	if qb.filter == nil {
 		return
 	}
-	s, err := qb.query.BuildQuerySQL()
+	s, err := qb.filter.BuildFilterHelper(ctx, tx)
 	if err != nil {
 		return
 	}
@@ -103,7 +86,7 @@ func (qb *Query) buildQuery() (stmt string, err error) {
 	return
 }
 
-func (qb *Query) buildSort() (stmt string, err error) {
+func (qb *queryImpl) BuildSort(ctx context.Context, tx tx.ReadTx) (stmt string, err error) {
 	if len(qb.sort) == 0 {
 		stmt = ""
 		return
@@ -113,7 +96,7 @@ func (qb *Query) buildSort() (stmt string, err error) {
 	sortLen := len(qb.sort)
 	for idx, sNode := range qb.sort {
 		var s string
-		s, err = sNode.SortField.BuildSort(sNode.SortValue)
+		s, err = sNode.SortField.BuildSort(ctx, tx, sNode.SortValue)
 		if err != nil {
 			return
 		}
@@ -127,93 +110,82 @@ func (qb *Query) buildSort() (stmt string, err error) {
 	return
 }
 
-func (qb *Query) Build() (stmt string, err error) {
-	// TODO
-	// var buffer bytes.Buffer
-	// tableName := qb.tableId.GetTableName()
-	// buffer.WriteString(fmt.Sprintf("SELECT %s.object_id AS object_id", tableName))
-	// for _, field := range qb.fields {
-	// 	buffer.WriteString(", ")
-	// 	buffer.WriteString(fmt.Sprintf(" %s.data AS %s ", field, field))
-	// }
-	// buffer.WriteString(fmt.Sprintf(" FROM %s ", tableName))
-
-	// // 构建Join
-	// for _, field := range qb.fields {
-	// 	buffer.WriteString(fmt.Sprintf(" LEFT JOIN %s ON %s.object_id = %s.object_id ", field, tableName, field))
-	// }
-	// queryStmt, err := qb.buildQuery()
-	// if err != nil {
-	// 	return
-	// }
-	// buffer.WriteString(queryStmt)
-	// sortStmt, err := qb.buildSort()
-	// if err != nil {
-	// 	return
-	// }
-	// buffer.WriteString(sortStmt)
-	// buffer.WriteString(fmt.Sprintf(" LIMIT %d OFFSET %d", qb.limit, qb.offset))
-	// stmt = buffer.String()
-	return
-}
-
-func (q *QueryNode) BuildQuerySQL() (stmt string, err error) {
+func (q *filterNode) BuildFilterHelper(ctx context.Context, tx tx.ReadTx) (stmt string, err error) {
 	switch q.Type {
 	case Connection:
-		stmt, err = q.BuildConnect()
+		stmt, err = q.BuildConnect(ctx, tx)
 	case Operation:
-		stmt, err = q.BuildOp()
+		stmt, err = q.BuildOp(ctx, tx)
 	default:
 		err = fmt.Errorf("unsupport queryNode type: %s from", q.Type)
 	}
 	return
 }
 
-func (q *QueryNode) BuildConnect() (stmt string, err error) {
-	queryStmtList := []string{}
+func (q *filterNode) BuildConnect(ctx context.Context, tx tx.ReadTx) (stmt string, err error) {
 
-	for _, childQuery := range q.ChildNodes {
-		var childStmt string
-		childStmt, err = childQuery.BuildQuerySQL()
-		if err != nil {
-			return
-		}
-		queryStmtList = append(queryStmtList, childStmt)
-	}
 	switch q.Connect {
 	case "and":
-		var buffer bytes.Buffer
-		end := len(queryStmtList) - 1
-		buffer.WriteString("(")
-		for idx, childStmt := range queryStmtList {
-			buffer.WriteString(childStmt)
-			if idx != end {
-				buffer.WriteString(" AND ")
-			}
-
-		}
-		buffer.WriteString(")")
-		stmt = buffer.String()
+		stmt, err = q.andConnect(ctx, tx)
 	case "or":
-		var buffer bytes.Buffer
-		end := len(queryStmtList) - 1
-		buffer.WriteString("(")
-		for idx, childStmt := range queryStmtList {
-			buffer.WriteString(childStmt)
-			if idx != end {
-				buffer.WriteString(" OR ")
-			}
-
-		}
-		buffer.WriteString(")")
-		stmt = buffer.String()
+		stmt, err = q.orConnect(ctx, tx)
 	default:
 		err = fmt.Errorf("unsupport query connect type of %s", q.Connect)
 	}
 	return
 }
 
-func (q *QueryNode) BuildOp() (stmt string, err error) {
-	stmt, err = q.QueryField.BuildQuery(q.QueryValue)
+func (q *filterNode) andConnect(ctx context.Context, tx tx.ReadTx) (stmt string, err error) {
+	queryStmtList := []string{}
+	for _, childQuery := range q.ChildNodes {
+		var childStmt string
+		childStmt, err = childQuery.BuildFilterHelper(ctx, tx)
+		if err != nil {
+			return
+		}
+		queryStmtList = append(queryStmtList, childStmt)
+	}
+	var buffer bytes.Buffer
+	end := len(queryStmtList) - 1
+	buffer.WriteString("(")
+	for idx, childStmt := range queryStmtList {
+		buffer.WriteString(childStmt)
+		if idx != end {
+			buffer.WriteString(" AND ")
+		}
+
+	}
+	buffer.WriteString(")")
+	stmt = buffer.String()
+	return
+}
+
+func (q *filterNode) orConnect(ctx context.Context, tx tx.ReadTx) (stmt string, err error) {
+	queryStmtList := []string{}
+	for _, childQuery := range q.ChildNodes {
+		var childStmt string
+		childStmt, err = childQuery.BuildFilterHelper(ctx, tx)
+		if err != nil {
+			return
+		}
+		queryStmtList = append(queryStmtList, childStmt)
+	}
+	var buffer bytes.Buffer
+	end := len(queryStmtList) - 1
+	buffer.WriteString("(")
+	for idx, childStmt := range queryStmtList {
+		buffer.WriteString(childStmt)
+		if idx != end {
+			buffer.WriteString(" OR ")
+		}
+
+	}
+	buffer.WriteString(")")
+	stmt = buffer.String()
+	return
+}
+
+func (q *filterNode) BuildOp(ctx context.Context, tx tx.ReadTx) (stmt string, err error) {
+	stmt, err = q.filterField.BuildQuery(ctx, tx, q.filterValue)
 	return
 }

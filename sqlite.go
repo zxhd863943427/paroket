@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/mattn/go-sqlite3"
-	_ "github.com/mattn/go-sqlite3"
 
 	"paroket/attribute"
 	"paroket/common"
@@ -20,13 +19,6 @@ type SqliteImpl struct {
 	db       *sql.DB
 	acMap    map[common.AttributeClassId]common.AttributeClass
 	tableMap map[common.TableId]common.Table
-}
-
-func testsql() {
-	var pk common.DB
-	pk = NewSqliteImpl()
-
-	pk.Open(context.Background(), ":memory:", nil)
 }
 
 func NewSqliteImpl() (s common.DB) {
@@ -84,7 +76,8 @@ func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 	// 创建视图
 	createTableViewStmt := `CREATE TABLE IF NOT EXISTS table_views (
 		table_id BLOB NOT NULL,
-		filter JSONB NOT NULL,
+		view_id BLOB NOT NULL,
+		query JSONB NOT NULL,
 		FOREIGN KEY (table_id) REFERENCES tables(table_id)
 	);`
 
@@ -198,9 +191,6 @@ func (s *SqliteImpl) ListAttributeClass(ctx context.Context, tx tx.ReadTx) (acLi
 	acidList := []common.AttributeClassId{}
 	acList = []common.AttributeClass{}
 	var rows *sql.Rows
-	if err != nil {
-		return
-	}
 	queryClassIdStmt := `
 	SELECT class_id FROM attribute_classes`
 	rows, err = tx.Query(queryClassIdStmt)

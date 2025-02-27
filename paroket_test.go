@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tidwall/pretty"
 )
 
 var testAttributeType = []common.AttributeType{
@@ -367,4 +368,100 @@ func TestSqliteImpl(t *testing.T) {
 		}
 	})
 
+	// 测试视图查询
+	t.Run("Test Table view Operations", func(t *testing.T) {
+		cleanupDatabase()
+		tx, err := sqlite.WriteTx(ctx)
+		assert.NoError(t, err)
+		defer tx.Commit()
+		var objNum = 20
+		var acNum = 4
+		// 创建新对象列表
+		objIdList := []common.ObjectId{}
+		objIdMap := map[common.ObjectId]bool{}
+		for i := 0; i < objNum; i++ {
+			obj, err := sqlite.CreateObject(ctx, tx)
+			assert.NoError(t, err)
+
+			objIdList = append(objIdList, obj.ObjectId())
+			objIdMap[obj.ObjectId()] = true
+		}
+
+		// 创建属性类列表
+		acList := []common.AttributeClass{}
+		for _, acType := range testAttributeType {
+			for i := 1; i < acNum; i++ {
+				ac, err := sqlite.CreateAttributeClass(ctx, tx, acType)
+				assert.NoError(t, err)
+				acList = append(acList, ac)
+
+			}
+		}
+		table, err := sqlite.CreateTable(ctx, tx)
+		assert.NoError(t, err)
+
+		//添加属性到对象
+		for i, oid := range objIdList {
+			for j, ac := range acList {
+				var attr common.Attribute
+				attr, err = ac.Insert(ctx, tx, oid)
+				assert.NoError(t, err)
+				nvalue := fmt.Sprintf("测试_%d_%d", j, i)
+				attr.SetValue(map[string]interface{}{
+					"value": nvalue,
+				})
+				ac.Update(ctx, tx, oid, attr)
+
+			}
+		}
+		//添加属性到表
+		for _, ac := range acList {
+			err = table.AddAttributeClass(ctx, tx, ac)
+			assert.NoError(t, err)
+		}
+
+		//插入对象到表
+		table.Insert(ctx, tx, objIdList...)
+
+		//新建视图
+		view, err := table.NewView(ctx, tx)
+		assert.NoError(t, err)
+
+		filter := fmt.Sprintf(`
+		{
+			"$or":[
+				{
+				"$not":[
+						{"$fts":{
+							"search":"测试_1_1"
+							}
+						}
+					]
+				},
+				{"$fts":{
+							"search":"测试 5"
+						}
+				},
+				{"%v":{
+					"like":"8"
+					}
+				}
+			]
+		}`, acList[0].ClassId())
+		err = view.Filter(tx, filter)
+		assert.NoError(t, err)
+
+		order := fmt.Sprintf(`[{"field":"%v","mode":"desc"}]`, acList[0].ClassId())
+		view.SortBy(tx, order)
+		assert.NoError(t, err)
+
+		result, err := view.Query(ctx, tx)
+		assert.NoError(t, err)
+		resultStr, err := result.Marshal(ctx, tx)
+		assert.NoError(t, err)
+
+		assert.NotEqual(t, 0, len(result.Raw()))
+		fmt.Println(string(pretty.Pretty([]byte(resultStr))))
+		fmt.Println("测试")
+	})
 }

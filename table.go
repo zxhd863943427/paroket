@@ -241,11 +241,11 @@ func (t *tableImpl) Insert(ctx context.Context, tx tx.WriteTx, oidList ...common
     	(object_id)
   	VALUES
     	(?);`, dataTable)
-	InsertTableObjRelation := fmt.Sprintf(`
+	InsertTableObjRelation := `
 	INSERT INTO object_to_tables
 		(object_id, table_id)
 	VALUES
-		(?,?)`)
+		(?,?)`
 	for _, oid := range oidList {
 		if _, err = tx.Exac(stmt, oid); err != nil {
 			return
@@ -353,6 +353,7 @@ func updateFtsIndex(ctx context.Context, t *tableImpl, acList []common.Attribute
 	dataTable, ok := t.metaInfo["data_table"].(string)
 	if !ok {
 		err = fmt.Errorf("table metainfo not found dataTable")
+		return
 	}
 	// 构建索引表达式
 	searchIdxFormulaBuffer := &bytes.Buffer{}
@@ -384,6 +385,7 @@ func updateFtsIndex(ctx context.Context, t *tableImpl, acList []common.Attribute
 	triggerName, ok := t.metaInfo["fts_trigger"].(string)
 	if !ok {
 		err = fmt.Errorf("table metainfo not found fts_trigger")
+		return
 	}
 	deleteTrigger := fmt.Sprintf("DROP TRIGGER  %s", triggerName)
 	if _, err = tx.Exac(deleteTrigger); err != nil {
@@ -478,17 +480,47 @@ func (t *tableImpl) DeleteAttributeClass(ctx context.Context, tx tx.WriteTx, ac 
 	return
 }
 
-func (t *tableImpl) Find(ctx context.Context, tx tx.ReadTx, query common.TableQuery) ([]common.Object, error) {
-	// TODO
-	panic("un impl")
+func (t *tableImpl) NewView(ctx context.Context, tx tx.WriteTx) (view common.View, err error) {
+	view, err = newView(ctx, tx, t.db, t)
+
+	return
 }
 
-func (t *tableImpl) NewView(ctx context.Context, tx tx.WriteTx) (common.View, error) {
-	// TODO
-	panic("un impl")
+func (t *tableImpl) ListView(ctx context.Context, tx tx.ReadTx) (vlist []common.View, err error) {
+	queryVid := `
+	SELECT view_id FROM
+	table_views
+	WHERE table_id = ?`
+	rows, err := tx.Query(queryVid, t.tableId)
+	if err != nil {
+		return
+	}
+	vidList := []common.ViewId{}
+	for rows.Next() {
+		var vid common.ViewId
+		if err = rows.Scan(&vid); err != nil {
+			return
+		}
+		vidList = append(vidList, vid)
+	}
+	vlist = []common.View{}
+	for _, vid := range vidList {
+		var view common.View
+		view, err = t.View(ctx, tx, vid)
+		if err != nil {
+			return
+		}
+		vlist = append(vlist, view)
+	}
+	return
 }
 
-func (t *tableImpl) GetViewData(ctx context.Context, tx tx.ReadTx, view common.View, config common.QueryConfig) ([][]common.Attribute, error) {
+func (t *tableImpl) View(ctx context.Context, tx tx.ReadTx, vid common.ViewId) (common.View, error) {
+	view, err := queryView(ctx, tx, t.db, t, vid)
+	return view, err
+}
+
+func (t *tableImpl) GetViewData(ctx context.Context, tx tx.ReadTx, vid common.ViewId) (ret common.TableResult, err error) {
 	// TODO
 	panic("un impl")
 }
@@ -502,6 +534,7 @@ func (t *tableImpl) DropTable(ctx context.Context, tx tx.WriteTx) (err error) {
 	dataTable, ok := t.metaInfo["data_table"].(string)
 	if !ok {
 		err = fmt.Errorf("table metainfo not found dataTable")
+		return
 	}
 	dropTable := fmt.Sprintf(`DROP TABLE %s`, dataTable)
 	if _, err = tx.Exac(dropTable); err != nil {

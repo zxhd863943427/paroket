@@ -25,11 +25,13 @@ type Table interface {
 
 	DeleteAttributeClass(ctx context.Context, tx tx.WriteTx, ac AttributeClass) error
 
-	Find(ctx context.Context, tx tx.ReadTx, query TableQuery) ([]Object, error)
-
 	NewView(ctx context.Context, tx tx.WriteTx) (View, error)
 
-	GetViewData(ctx context.Context, tx tx.ReadTx, view View, config QueryConfig) ([][]Attribute, error)
+	ListView(ctx context.Context, tx tx.ReadTx) ([]View, error)
+
+	View(ctx context.Context, tx tx.ReadTx, vid ViewId) (View, error)
+
+	GetViewData(ctx context.Context, tx tx.ReadTx, vid ViewId) (TableResult, error)
 
 	DropTable(ctx context.Context, tx tx.WriteTx) error
 }

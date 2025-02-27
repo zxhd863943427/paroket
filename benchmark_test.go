@@ -17,7 +17,7 @@ import (
 
 var testAttrNum = 30
 var perAttrNum = 8
-var testObjNum = 20 * 100 * 100
+var testObjNum = 100 * 100
 var testTableNum = 2
 
 var logSapce = 10

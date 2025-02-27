@@ -9,6 +9,8 @@ import (
 
 type TableId xid.ID
 
+type ViewId xid.ID
+
 type ObjectId xid.ID
 
 type AttributeId xid.ID
@@ -43,6 +45,26 @@ func TableIdFromStr(s string) (TableId, error) {
 func NewTableId() (TableId, error) {
 	guid := xid.New()
 	return TableId(guid), nil
+}
+
+// Scan 实现 sql.Scanner 接口
+func (id *ViewId) Scan(value interface{}) error {
+	return (*xid.ID)(id).Scan(value)
+}
+
+// Value 实现 driver.Valuer 接口
+func (id ViewId) Value() (driver.Value, error) {
+	return xid.ID(id).Value()
+}
+
+func (oid ViewId) String() string {
+	guid := xid.ID(oid)
+	return guid.String()
+}
+
+func NewViewId() (ViewId, error) {
+	guid := xid.New()
+	return ViewId(guid), nil
 }
 
 // Scan 实现 sql.Scanner 接口
