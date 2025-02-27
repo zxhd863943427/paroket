@@ -387,13 +387,13 @@ func (tc *TextAttributeClass) BuildQuery(ctx context.Context, tx tx.ReadTx, v ma
 			jsonPath,
 			value,
 		)
-	case "equal":
+	case "eq":
 		stmt = fmt.Sprintf(
 			`(data ->> '%s' = '%s')`,
 			jsonPath,
 			value,
 		)
-	case "unequal":
+	case "neq":
 		stmt = fmt.Sprintf(
 			`(data ->> '%s' != '%s')`,
 			jsonPath,
