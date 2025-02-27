@@ -14,7 +14,7 @@ import (
 	"paroket/tx"
 )
 
-type SqliteImpl struct {
+type sqliteImpl struct {
 	lock     *sync.Mutex
 	db       *sql.DB
 	acMap    map[common.AttributeClassId]common.AttributeClass
@@ -22,7 +22,7 @@ type SqliteImpl struct {
 }
 
 func NewSqliteImpl() (s common.DB) {
-	s = &SqliteImpl{
+	s = &sqliteImpl{
 		lock:     &sync.Mutex{},
 		db:       nil,
 		acMap:    map[common.AttributeClassId]common.AttributeClass{},
@@ -56,7 +56,7 @@ func registerSqliteHook() (err error) {
 	return
 }
 
-func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Config) (err error) {
+func (s *sqliteImpl) Open(ctx context.Context, dbPath string, config *common.Config) (err error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -165,11 +165,11 @@ func (s *SqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 }
 
 // AttributeClass操作
-func (s *SqliteImpl) CreateAttributeClass(ctx context.Context, tx tx.WriteTx, attrType common.AttributeType) (ac common.AttributeClass, err error) {
+func (s *sqliteImpl) CreateAttributeClass(ctx context.Context, tx tx.WriteTx, attrType common.AttributeType) (ac common.AttributeClass, err error) {
 	return attribute.NewAttributeClass(ctx, s, tx, attrType)
 }
 
-func (s *SqliteImpl) OpenAttributeClass(ctx context.Context, tx tx.ReadTx, acid common.AttributeClassId) (ac common.AttributeClass, err error) {
+func (s *sqliteImpl) OpenAttributeClass(ctx context.Context, tx tx.ReadTx, acid common.AttributeClassId) (ac common.AttributeClass, err error) {
 	var ok bool
 	if ac, ok = s.acMap[acid]; ok {
 		return ac, nil
@@ -187,7 +187,7 @@ func (s *SqliteImpl) OpenAttributeClass(ctx context.Context, tx tx.ReadTx, acid 
 	return
 }
 
-func (s *SqliteImpl) ListAttributeClass(ctx context.Context, tx tx.ReadTx) (acList []common.AttributeClass, err error) {
+func (s *sqliteImpl) ListAttributeClass(ctx context.Context, tx tx.ReadTx) (acList []common.AttributeClass, err error) {
 	acidList := []common.AttributeClassId{}
 	acList = []common.AttributeClass{}
 	var rows *sql.Rows
@@ -219,7 +219,7 @@ func (s *SqliteImpl) ListAttributeClass(ctx context.Context, tx tx.ReadTx) (acLi
 	return
 }
 
-func (s *SqliteImpl) DeleteAttributeClass(ctx context.Context, tx tx.WriteTx, acid common.AttributeClassId) (err error) {
+func (s *sqliteImpl) DeleteAttributeClass(ctx context.Context, tx tx.WriteTx, acid common.AttributeClassId) (err error) {
 	ac, err := s.OpenAttributeClass(ctx, tx, acid)
 	if err != nil {
 		return
@@ -229,7 +229,7 @@ func (s *SqliteImpl) DeleteAttributeClass(ctx context.Context, tx tx.WriteTx, ac
 }
 
 // Object操作
-func (s *SqliteImpl) CreateObject(ctx context.Context, tx tx.WriteTx) (obj common.Object, err error) {
+func (s *sqliteImpl) CreateObject(ctx context.Context, tx tx.WriteTx) (obj common.Object, err error) {
 
 	obj, err = common.NewObject(ctx, tx)
 	if err != nil {
@@ -238,7 +238,7 @@ func (s *SqliteImpl) CreateObject(ctx context.Context, tx tx.WriteTx) (obj commo
 	return
 }
 
-func (s *SqliteImpl) OpenObject(ctx context.Context, tx tx.ReadTx, oid common.ObjectId) (obj common.Object, err error) {
+func (s *sqliteImpl) OpenObject(ctx context.Context, tx tx.ReadTx, oid common.ObjectId) (obj common.Object, err error) {
 
 	obj, err = common.QueryObject(ctx, tx, oid)
 	if err != nil {
@@ -247,7 +247,7 @@ func (s *SqliteImpl) OpenObject(ctx context.Context, tx tx.ReadTx, oid common.Ob
 	return
 }
 
-func (s *SqliteImpl) DeleteObject(ctx context.Context, tx tx.WriteTx, oid common.ObjectId) (err error) {
+func (s *sqliteImpl) DeleteObject(ctx context.Context, tx tx.WriteTx, oid common.ObjectId) (err error) {
 	query := `DELETE FROM objects WHERE object_id = ?`
 	if _, err = tx.Exac(query, oid); err != nil {
 		return
@@ -256,18 +256,18 @@ func (s *SqliteImpl) DeleteObject(ctx context.Context, tx tx.WriteTx, oid common
 }
 
 // Table 操作
-func (s *SqliteImpl) CreateTable(ctx context.Context, tx tx.WriteTx) (table common.Table, err error) {
-	table, err = NewTable(ctx, s, tx)
+func (s *sqliteImpl) CreateTable(ctx context.Context, tx tx.WriteTx) (table common.Table, err error) {
+	table, err = newTable(ctx, s, tx)
 	return
 }
 
-func (s *SqliteImpl) OpenTable(ctx context.Context, tx tx.ReadTx, tid common.TableId) (table common.Table, err error) {
-	table, err = QueryTable(ctx, s, tx, tid)
+func (s *sqliteImpl) OpenTable(ctx context.Context, tx tx.ReadTx, tid common.TableId) (table common.Table, err error) {
+	table, err = queryTable(ctx, s, tx, tid)
 	return
 }
 
-func (s *SqliteImpl) DeleteTable(ctx context.Context, tx tx.WriteTx, tid common.TableId) (err error) {
-	table, err := QueryTable(ctx, s, tx, tid)
+func (s *sqliteImpl) DeleteTable(ctx context.Context, tx tx.WriteTx, tid common.TableId) (err error) {
+	table, err := queryTable(ctx, s, tx, tid)
 	if err != nil {
 		return
 	}
@@ -278,7 +278,7 @@ func (s *SqliteImpl) DeleteTable(ctx context.Context, tx tx.WriteTx, tid common.
 }
 
 // DB操作
-func (s *SqliteImpl) ReadTx(ctx context.Context) (rtx tx.ReadTx, err error) {
+func (s *sqliteImpl) ReadTx(ctx context.Context) (rtx tx.ReadTx, err error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{
 		ReadOnly: true,
 	})
@@ -292,7 +292,7 @@ func (s *SqliteImpl) ReadTx(ctx context.Context) (rtx tx.ReadTx, err error) {
 	return
 }
 
-func (s *SqliteImpl) WriteTx(ctx context.Context) (wtx tx.WriteTx, err error) {
+func (s *sqliteImpl) WriteTx(ctx context.Context) (wtx tx.WriteTx, err error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -307,6 +307,6 @@ func (s *SqliteImpl) WriteTx(ctx context.Context) (wtx tx.WriteTx, err error) {
 }
 
 // 关闭数据库
-func (s *SqliteImpl) Close(ctx context.Context) error {
+func (s *sqliteImpl) Close(ctx context.Context) error {
 	return s.db.Close()
 }

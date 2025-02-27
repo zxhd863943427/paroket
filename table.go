@@ -27,7 +27,7 @@ type tableImpl struct {
 	version   int64
 }
 
-func NewTable(ctx context.Context, db common.Database, tx tx.WriteTx) (table common.Table, err error) {
+func newTable(ctx context.Context, db common.Database, tx tx.WriteTx) (table common.Table, err error) {
 	id, err := common.NewTableId()
 	if err != nil {
 		return
@@ -91,7 +91,7 @@ func NewTable(ctx context.Context, db common.Database, tx tx.WriteTx) (table com
 	return
 }
 
-func QueryTable(ctx context.Context, db common.Database, tx tx.ReadTx, tid common.TableId) (table common.Table, err error) {
+func queryTable(ctx context.Context, db common.Database, tx tx.ReadTx, tid common.TableId) (table common.Table, err error) {
 
 	t := &tableImpl{
 		lock: &sync.Mutex{},

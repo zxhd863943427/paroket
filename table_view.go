@@ -139,7 +139,7 @@ func (v *viewImpl) save(tx tx.WriteTx) (err error) {
 }
 
 func (v *viewImpl) Query(ctx context.Context, tx tx.ReadTx) (queryData common.TableResult, err error) {
-	query := NewQueryBuilder(v.table, v.db)
+	query := newQueryBuilder(v.table, v.db)
 	if err = query.ParseFilter(ctx, tx, v.filter); err != nil {
 		return
 	}

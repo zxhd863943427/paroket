@@ -14,7 +14,7 @@ type queryImpl struct {
 	table  common.Table
 	db     common.Database
 	filter *filterNode
-	sort   []SortNode
+	sort   []sortNode
 	limit  int
 	offset int
 }
@@ -28,8 +28,8 @@ var (
 type filterNodeType string
 
 const (
-	Connection filterNodeType = "connection"
-	Operation  filterNodeType = "operation"
+	connection filterNodeType = "connection"
+	operation  filterNodeType = "operation"
 )
 
 type filterNode struct {
@@ -40,16 +40,16 @@ type filterNode struct {
 	filterValue map[string]interface{}
 }
 
-type SortNode struct {
+type sortNode struct {
 	SortField common.SortField
 	SortValue map[string]interface{}
 }
 
-func NewQueryBuilder(table common.Table, db common.Database) common.QueryBuilder {
+func newQueryBuilder(table common.Table, db common.Database) common.QueryBuilder {
 	return &queryImpl{
 		table:  table,
 		db:     db,
-		sort:   []SortNode{},
+		sort:   []sortNode{},
 		limit:  50,
 		offset: 0,
 	}
@@ -65,7 +65,7 @@ func (qb *queryImpl) ParseFilter(ctx context.Context, tx tx.ReadTx, filter strin
 			return
 		}
 		var filterNode *filterNode
-		filterNode, err = ParseFilterHelper(ctx, qb.db, tx, result)
+		filterNode, err = parseFilterHelper(ctx, qb.db, tx, result)
 		qb.filter = filterNode
 	default:
 		err = fmt.Errorf("invaild filter")
@@ -73,7 +73,7 @@ func (qb *queryImpl) ParseFilter(ctx context.Context, tx tx.ReadTx, filter strin
 	return
 }
 
-func ParseFilterHelper(ctx context.Context, db common.Database, tx tx.ReadTx, filter gjson.Result) (node *filterNode, err error) {
+func parseFilterHelper(ctx context.Context, db common.Database, tx tx.ReadTx, filter gjson.Result) (node *filterNode, err error) {
 	keys := filter.Get("@keys").Array()
 	if len(keys) != 1 {
 		err = fmt.Errorf("parse filter failed : key error %v", keys)
@@ -81,20 +81,20 @@ func ParseFilterHelper(ctx context.Context, db common.Database, tx tx.ReadTx, fi
 	}
 	key := keys[0].Str
 	switch matchOpType(key) {
-	case Connection:
-		node, err = ParseConnectFilter(ctx, db, tx, filter)
-	case Operation:
-		node, err = ParseOperationFilter(ctx, db, tx, filter)
+	case connection:
+		node, err = parseConnectFilter(ctx, db, tx, filter)
+	case operation:
+		node, err = parseOperationFilter(ctx, db, tx, filter)
 	default:
 		err = fmt.Errorf("parse op Type error")
 	}
 	return
 }
 
-func ParseConnectFilter(ctx context.Context, db common.Database, tx tx.ReadTx, filter gjson.Result) (node *filterNode, err error) {
+func parseConnectFilter(ctx context.Context, db common.Database, tx tx.ReadTx, filter gjson.Result) (node *filterNode, err error) {
 	key := filter.Get("@keys").Array()[0].Str
 	node = &filterNode{
-		Type:       Connection,
+		Type:       connection,
 		Connect:    key,
 		ChildNodes: []filterNode{},
 	}
@@ -107,7 +107,7 @@ func ParseConnectFilter(ctx context.Context, db common.Database, tx tx.ReadTx, f
 	childFilterList := childNode.Array()
 	for _, childFilter := range childFilterList {
 		var childFilterNode *filterNode
-		childFilterNode, err = ParseFilterHelper(ctx, db, tx, childFilter)
+		childFilterNode, err = parseFilterHelper(ctx, db, tx, childFilter)
 		if err != nil {
 			return
 		}
@@ -116,7 +116,7 @@ func ParseConnectFilter(ctx context.Context, db common.Database, tx tx.ReadTx, f
 	return
 }
 
-func ParseOperationFilter(ctx context.Context, db common.Database, tx tx.ReadTx, filter gjson.Result) (node *filterNode, err error) {
+func parseOperationFilter(ctx context.Context, db common.Database, tx tx.ReadTx, filter gjson.Result) (node *filterNode, err error) {
 
 	key := filter.Get("@keys").Array()[0].Str
 	op := filter.Get(key).Get("@keys").Array()[0].Str
@@ -127,7 +127,7 @@ func ParseOperationFilter(ctx context.Context, db common.Database, tx tx.ReadTx,
 		ftsField := newFts()
 
 		node = &filterNode{
-			Type:        Operation,
+			Type:        operation,
 			filterField: ftsField,
 			filterValue: map[string]interface{}{
 				"op":    op,
@@ -135,12 +135,12 @@ func ParseOperationFilter(ctx context.Context, db common.Database, tx tx.ReadTx,
 			},
 		}
 	default:
-		node, err = ParseAttributeOperationFilter(ctx, db, tx, filter)
+		node, err = parseAttributeOperationFilter(ctx, db, tx, filter)
 	}
 	return
 }
 
-func ParseAttributeOperationFilter(ctx context.Context, db common.Database, tx tx.ReadTx, filter gjson.Result) (node *filterNode, err error) {
+func parseAttributeOperationFilter(ctx context.Context, db common.Database, tx tx.ReadTx, filter gjson.Result) (node *filterNode, err error) {
 	key := filter.Get("@keys").Array()[0].Str
 	op := filter.Get(key).Get("@keys").Array()[0].Str
 	val := filter.Get(key).Get(op).Value()
@@ -153,7 +153,7 @@ func ParseAttributeOperationFilter(ctx context.Context, db common.Database, tx t
 		return
 	}
 	node = &filterNode{
-		Type:        Operation,
+		Type:        operation,
 		filterField: ac,
 		filterValue: map[string]interface{}{
 			"op":    op,
@@ -166,13 +166,13 @@ func ParseAttributeOperationFilter(ctx context.Context, db common.Database, tx t
 func matchOpType(op string) filterNodeType {
 	switch op {
 	case opBytesAnd:
-		return Connection
+		return connection
 	case opBytesOr:
-		return Connection
+		return connection
 	case opBytesNot:
-		return Connection
+		return connection
 	default:
-		return Operation
+		return operation
 	}
 }
 
@@ -207,7 +207,7 @@ func (qb *queryImpl) ParseOrder(ctx context.Context, tx tx.ReadTx, order string)
 			return
 		}
 		delete(parseOrderData, "field")
-		node := SortNode{
+		node := sortNode{
 			SortField: ac,
 			SortValue: parseOrderData,
 		}
@@ -257,9 +257,9 @@ func (qb *queryImpl) BuildSort(ctx context.Context, tx tx.ReadTx) (stmt string, 
 
 func (q *filterNode) BuildFilterHelper(ctx context.Context, tx tx.ReadTx) (stmt string, err error) {
 	switch q.Type {
-	case Connection:
+	case connection:
 		stmt, err = q.BuildConnect(ctx, tx)
-	case Operation:
+	case operation:
 		stmt, err = q.BuildOp(ctx, tx)
 	default:
 		err = fmt.Errorf("unsupport queryNode type: %s from", q.Type)
