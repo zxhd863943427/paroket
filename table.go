@@ -27,6 +27,13 @@ type tableImpl struct {
 	version   int64
 }
 
+func init() {
+	err := common.RegisterAfterUpdateObjectHook(afterUpdateObject)
+	if err != nil {
+		fmt.Printf("init table upadate hook:%v", err)
+	}
+}
+
 func newTable(ctx context.Context, db common.Database, tx tx.WriteTx) (table common.Table, err error) {
 	id, err := common.NewTableId()
 	if err != nil {
@@ -128,6 +135,29 @@ func queryTable(ctx context.Context, db common.Database, tx tx.ReadTx, tid commo
 	return
 }
 
+func afterUpdateObject(ctx context.Context, db common.Database, tx tx.WriteTx, obj common.Object) (err error) {
+	tidList := []common.TableId{}
+	queryTableId := `SELECT table_id FROM object_to_tables WHERE object_id = ?`
+	rows, err := tx.Query(queryTableId, obj.ObjectId())
+	if err != nil && err != sql.ErrNoRows {
+		return
+	}
+	for rows.Next() {
+		var tableId common.TableId
+		if err = rows.Scan(&tableId); err != nil {
+			return
+		}
+		tidList = append(tidList, tableId)
+	}
+	for _, tid := range tidList {
+		updateRelateTable := fmt.Sprintf(`UPDATE %s SET data = jsonb(?) WHERE object_id = ?`, tid.DataTable())
+		if _, err = tx.Exac(updateRelateTable, obj.Data(), obj.ObjectId()); err != nil {
+			return
+		}
+	}
+	return
+}
+
 func (t *tableImpl) TableId() common.TableId {
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -221,7 +251,7 @@ func (t *tableImpl) FindId(ctx context.Context, tx tx.ReadTx, oidList ...common.
 	if err != nil {
 		return
 	}
-	objList, err = common.QueryTableObject(ctx, rows)
+	objList, err = common.QueryTableObject(ctx, t.db, rows)
 	if err != nil {
 		return
 	}

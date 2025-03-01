@@ -17,7 +17,7 @@ import (
 
 var testAttrNum = 30
 var perAttrNum = 8
-var testObjNum = 20 * 100 * 100
+var testObjNum = 50 * 100
 var testTableNum = 2
 
 var logSapce = 10
@@ -208,7 +208,7 @@ func TestQueryBenchmark(t *testing.T) {
 	rows, err = tx.Query(queryStmt)
 	assert.NoError(t, err)
 
-	objList, err := common.QueryTableObject(ctx, rows)
+	objList, err := common.QueryTableObject(ctx, db, rows)
 
 	ticker.log("query item")
 	assert.NoError(t, err)

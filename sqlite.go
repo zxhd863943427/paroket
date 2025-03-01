@@ -231,7 +231,7 @@ func (s *sqliteImpl) DeleteAttributeClass(ctx context.Context, tx tx.WriteTx, ac
 // Object操作
 func (s *sqliteImpl) CreateObject(ctx context.Context, tx tx.WriteTx) (obj common.Object, err error) {
 
-	obj, err = common.NewObject(ctx, tx)
+	obj, err = common.NewObject(ctx, s, tx)
 	if err != nil {
 		return
 	}
@@ -240,7 +240,7 @@ func (s *sqliteImpl) CreateObject(ctx context.Context, tx tx.WriteTx) (obj commo
 
 func (s *sqliteImpl) OpenObject(ctx context.Context, tx tx.ReadTx, oid common.ObjectId) (obj common.Object, err error) {
 
-	obj, err = common.QueryObject(ctx, tx, oid)
+	obj, err = common.QueryObject(ctx, s, tx, oid)
 	if err != nil {
 		return
 	}
@@ -248,8 +248,12 @@ func (s *sqliteImpl) OpenObject(ctx context.Context, tx tx.ReadTx, oid common.Ob
 }
 
 func (s *sqliteImpl) DeleteObject(ctx context.Context, tx tx.WriteTx, oid common.ObjectId) (err error) {
-	query := `DELETE FROM objects WHERE object_id = ?`
-	if _, err = tx.Exac(query, oid); err != nil {
+	obj, err := s.OpenObject(ctx, tx, oid)
+	if err != nil {
+		return
+	}
+	err = obj.Delete(ctx, tx)
+	if err != nil {
 		return
 	}
 	return
