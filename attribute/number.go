@@ -72,32 +72,32 @@ func parseNumberAttributeClass(_ context.Context, acProto *AttributeClassInfo) (
 	return
 }
 
-func (tc *NumberAttributeClass) GetMetaInfo(ctx context.Context, tx tx.ReadTx) (v utils.JSONMap, err error) {
+func (nc *NumberAttributeClass) GetMetaInfo(ctx context.Context, tx tx.ReadTx) (v utils.JSONMap, err error) {
 	m := utils.JSONMap{}
-	for key := range tc.metaInfo {
-		m[key] = tc.metaInfo[key]
+	for key := range nc.metaInfo {
+		m[key] = nc.metaInfo[key]
 	}
 	return m, nil
 }
-func (tn *NumberAttributeClass) Set(ctx context.Context, tx tx.WriteTx, v utils.JSONMap) (err error) {
-	oldName := tn.name
-	oldkey := tn.key
+func (nc *NumberAttributeClass) Set(ctx context.Context, tx tx.WriteTx, v utils.JSONMap) (err error) {
+	oldName := nc.name
+	oldkey := nc.key
 	oldMetaInfo := utils.JSONMap{}
-	for key := range tn.metaInfo {
-		oldMetaInfo[key] = tn.metaInfo[key]
+	for key := range nc.metaInfo {
+		oldMetaInfo[key] = nc.metaInfo[key]
 	}
 	defer func() {
 		if err != nil {
-			tn.name = oldName
-			tn.key = oldkey
-			tn.metaInfo = oldMetaInfo
+			nc.name = oldName
+			nc.key = oldkey
+			nc.metaInfo = oldMetaInfo
 		}
 	}()
 
 	if name, ok := v["name"]; ok {
 		switch value := name.(type) {
 		case string:
-			tn.name = value
+			nc.name = value
 		default:
 			err = fmt.Errorf("set name with error type")
 			return
@@ -108,7 +108,7 @@ func (tn *NumberAttributeClass) Set(ctx context.Context, tx tx.WriteTx, v utils.
 	if key, ok := v["key"]; ok {
 		switch value := key.(type) {
 		case string:
-			tn.key = value
+			nc.key = value
 		default:
 			err = fmt.Errorf("set key with error type")
 			return
@@ -116,32 +116,32 @@ func (tn *NumberAttributeClass) Set(ctx context.Context, tx tx.WriteTx, v utils.
 		delete(v, "key")
 	}
 	for key := range v {
-		tn.metaInfo[key] = v[key]
+		nc.metaInfo[key] = v[key]
 	}
 	stmt := `
   UPDATE attribute_classes
   SET (attribute_name,attribute_key,attribute_meta_info) = 
   (?,?,?)
   WHERE class_id = ?`
-	if _, err = tx.Exac(stmt, tn.name, tn.key, tn.metaInfo, tn.id); err != nil {
+	if _, err = tx.Exac(stmt, nc.name, nc.key, nc.metaInfo, nc.id); err != nil {
 		return
 	}
 	return
 }
 
-func (tn *NumberAttributeClass) Insert(ctx context.Context, tx tx.WriteTx, oid common.ObjectId) (attr common.Attribute, err error) {
+func (nc *NumberAttributeClass) Insert(ctx context.Context, tx tx.WriteTx, oid common.ObjectId) (attr common.Attribute, err error) {
 
 	attrText := &NumberAttribute{
-		class: tn,
+		class: nc,
 		value: 0,
 	}
 	attr = attrText
-	obj, err := tn.db.OpenObject(ctx, tx, oid)
+	obj, err := nc.db.OpenObject(ctx, tx, oid)
 	if err != nil {
 		return
 	}
 	data := obj.Data()
-	newValue, err := sjson.SetRaw(string(data), tn.id.String(), attr.GetJSON())
+	newValue, err := sjson.SetRaw(string(data), nc.id.String(), attr.GetJSON())
 	if err != nil {
 		return
 	}
@@ -150,7 +150,7 @@ func (tn *NumberAttributeClass) Insert(ctx context.Context, tx tx.WriteTx, oid c
 		return
 	}
 
-	updateTable, ok := tn.metaInfo["updated_table"].(string)
+	updateTable, ok := nc.metaInfo["updated_table"].(string)
 	if !ok {
 		err = fmt.Errorf("TextAttribute metainfo dont have updated_table")
 		return
@@ -169,20 +169,20 @@ VALUES
 	return
 
 }
-func (tn *NumberAttributeClass) FindId(ctx context.Context, tx tx.ReadTx, oid common.ObjectId) (attr common.Attribute, err error) {
-	obj, err := tn.db.OpenObject(ctx, tx, oid)
+func (nc *NumberAttributeClass) FindId(ctx context.Context, tx tx.ReadTx, oid common.ObjectId) (attr common.Attribute, err error) {
+	obj, err := nc.db.OpenObject(ctx, tx, oid)
 	if err != nil {
 		return
 	}
 	data := obj.Data()
-	attrPath := fmt.Sprintf(`%v`, tn.id)
+	attrPath := fmt.Sprintf(`%v`, nc.id)
 	attrData := gjson.Get(string(data), attrPath)
 	if attrData.Type == gjson.Null {
 		err = sql.ErrNoRows
 		return
 	}
 	attrNum := &NumberAttribute{
-		class: tn,
+		class: nc,
 		value: 0,
 	}
 	if err = attrNum.Parse(attrData.Raw); err != nil {
@@ -191,13 +191,13 @@ func (tn *NumberAttributeClass) FindId(ctx context.Context, tx tx.ReadTx, oid co
 	attr = attrNum
 	return
 }
-func (tn *NumberAttributeClass) Update(ctx context.Context, tx tx.WriteTx, oid common.ObjectId, attr common.Attribute) (err error) {
-	obj, err := tn.db.OpenObject(ctx, tx, oid)
+func (nc *NumberAttributeClass) Update(ctx context.Context, tx tx.WriteTx, oid common.ObjectId, attr common.Attribute) (err error) {
+	obj, err := nc.db.OpenObject(ctx, tx, oid)
 	if err != nil {
 		return
 	}
 	data := obj.Data()
-	newValue, err := sjson.SetRaw(string(data), tn.id.String(), attr.GetJSON())
+	newValue, err := sjson.SetRaw(string(data), nc.id.String(), attr.GetJSON())
 	if err != nil {
 		return
 	}
@@ -206,7 +206,7 @@ func (tn *NumberAttributeClass) Update(ctx context.Context, tx tx.WriteTx, oid c
 		return
 	}
 
-	updateTable, ok := tn.metaInfo["updated_table"].(string)
+	updateTable, ok := nc.metaInfo["updated_table"].(string)
 	if !ok {
 		err = fmt.Errorf("NumberAttribute metainfo dont have updated_table")
 		return
@@ -223,13 +223,13 @@ UPDATE %s SET updated = ?
 
 	return
 }
-func (tn *NumberAttributeClass) Delete(ctx context.Context, tx tx.WriteTx, oid common.ObjectId) (err error) {
-	obj, err := tn.db.OpenObject(ctx, tx, oid)
+func (nc *NumberAttributeClass) Delete(ctx context.Context, tx tx.WriteTx, oid common.ObjectId) (err error) {
+	obj, err := nc.db.OpenObject(ctx, tx, oid)
 	if err != nil {
 		return
 	}
 	data := obj.Data()
-	newValue, err := sjson.Delete(string(data), tn.id.String())
+	newValue, err := sjson.Delete(string(data), nc.id.String())
 	if err != nil {
 		return
 	}
@@ -237,7 +237,7 @@ func (tn *NumberAttributeClass) Delete(ctx context.Context, tx tx.WriteTx, oid c
 	if err != nil {
 		return
 	}
-	updateTable, ok := tn.metaInfo["updated_table"].(string)
+	updateTable, ok := nc.metaInfo["updated_table"].(string)
 	if !ok {
 		err = fmt.Errorf("NumberAttribute metainfo dont have updated_table")
 		return
@@ -251,9 +251,9 @@ DELETE FROM %s WHERE object_id = ?
 	return
 }
 
-func (tn *NumberAttributeClass) Drop(ctx context.Context, tx tx.WriteTx) (err error) {
+func (nc *NumberAttributeClass) Drop(ctx context.Context, tx tx.WriteTx) (err error) {
 
-	updateTable, ok := tn.metaInfo["updated_table"].(string)
+	updateTable, ok := nc.metaInfo["updated_table"].(string)
 	if !ok {
 		err = fmt.Errorf("NumberAttribute metainfo dont have updated_table")
 		return
@@ -262,7 +262,7 @@ func (tn *NumberAttributeClass) Drop(ctx context.Context, tx tx.WriteTx) (err er
 	tidList := []common.TableId{}
 	queryTableId := `
 	SELECT table_id FROM table_to_attribute_classes WHERE class_id = ?`
-	rows, err := tx.Query(queryTableId, tn.id)
+	rows, err := tx.Query(queryTableId, nc.id)
 	if err != nil {
 		return
 	}
@@ -275,11 +275,11 @@ func (tn *NumberAttributeClass) Drop(ctx context.Context, tx tx.WriteTx) (err er
 	}
 	for _, tid := range tidList {
 		var table common.Table
-		table, err = tn.db.OpenTable(ctx, tx, tid)
+		table, err = nc.db.OpenTable(ctx, tx, tid)
 		if err != nil {
 			return
 		}
-		table.DeleteAttributeClass(ctx, tx, tn)
+		table.DeleteAttributeClass(ctx, tx, nc)
 	}
 
 	// 从相关的object中移除attribute
@@ -301,12 +301,12 @@ func (tn *NumberAttributeClass) Drop(ctx context.Context, tx tx.WriteTx) (err er
 	for _, oid := range oidList {
 		var obj common.Object
 		var newValue string
-		obj, err = tn.db.OpenObject(ctx, tx, oid)
+		obj, err = nc.db.OpenObject(ctx, tx, oid)
 		if err != nil {
 			return
 		}
 		data := obj.Data()
-		newValue, err = sjson.Delete(string(data), tn.id.String())
+		newValue, err = sjson.Delete(string(data), nc.id.String())
 		if err != nil {
 			return
 		}
@@ -322,21 +322,21 @@ func (tn *NumberAttributeClass) Drop(ctx context.Context, tx tx.WriteTx) (err er
 	}
 
 	deleteAttributeClassStmt := `DELETE FROM attribute_classes WHERE class_id = ?`
-	if _, err = tx.Exac(deleteAttributeClassStmt, tn.id); err != nil {
+	if _, err = tx.Exac(deleteAttributeClassStmt, nc.id); err != nil {
 		return
 	}
 	return
 }
 
-func (tn *NumberAttributeClass) FromObject(obj common.Object) (attr common.Attribute, err error) {
+func (nc *NumberAttributeClass) FromObject(obj common.Object) (attr common.Attribute, err error) {
 	attrNum := &NumberAttribute{
-		class: tn,
+		class: nc,
 		value: 0,
 	}
 	attr = attrNum
 
 	data := obj.Data()
-	attrPath := fmt.Sprintf(`%v`, tn.id)
+	attrPath := fmt.Sprintf(`%v`, nc.id)
 	attrData := gjson.Get(string(data), attrPath)
 	if attrData.Type == gjson.Null {
 		return
@@ -350,7 +350,7 @@ func (tn *NumberAttributeClass) FromObject(obj common.Object) (attr common.Attri
 }
 
 // 构建查询
-func (tn *NumberAttributeClass) BuildQuery(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (stmt string, err error) {
+func (nc *NumberAttributeClass) BuildQuery(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (stmt string, err error) {
 	if _, ok := v["op"].(string); !ok {
 		err = fmt.Errorf("invaild query value:%s", v)
 		return
@@ -362,7 +362,7 @@ func (tn *NumberAttributeClass) BuildQuery(ctx context.Context, tx tx.ReadTx, v 
 	op := v["op"].(string)
 	value := v["value"].(float64)
 
-	jsonPath, ok := tn.metaInfo["json_value_path"].(string)
+	jsonPath, ok := nc.metaInfo["json_value_path"].(string)
 	if !ok {
 		err = fmt.Errorf("TextAttribute metainfo dont have json_value_path")
 		return
@@ -411,13 +411,13 @@ func (tn *NumberAttributeClass) BuildQuery(ctx context.Context, tx tx.ReadTx, v 
 }
 
 // 构建排序
-func (tn *NumberAttributeClass) BuildSort(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (stmt string, err error) {
+func (nc *NumberAttributeClass) BuildSort(ctx context.Context, tx tx.ReadTx, v map[string]interface{}) (stmt string, err error) {
 	if _, ok := v["mode"].(string); !ok {
 		err = fmt.Errorf("invaild sort value:%s", v)
 		return
 	}
 	mode := v["mode"].(string)
-	jsonPath, ok := tn.metaInfo["json_value_path"].(string)
+	jsonPath, ok := nc.metaInfo["json_value_path"].(string)
 	if !ok {
 		err = fmt.Errorf("NumberAttribute metainfo dont have json_value_path")
 		return
