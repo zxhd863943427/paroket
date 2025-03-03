@@ -209,7 +209,7 @@ func (s *sqliteImpl) ListAttributeClass(ctx context.Context, tx tx.ReadTx) (acLi
 	}
 	for _, acid := range acidList {
 		var ac common.AttributeClass
-		ac, err = attribute.QueryAttributeClass(ctx, s, tx, acid)
+		ac, err = s.OpenAttributeClass(ctx, tx, acid)
 		if err != nil {
 			return
 		}
@@ -266,7 +266,14 @@ func (s *sqliteImpl) CreateTable(ctx context.Context, tx tx.WriteTx) (table comm
 }
 
 func (s *sqliteImpl) OpenTable(ctx context.Context, tx tx.ReadTx, tid common.TableId) (table common.Table, err error) {
+	if table, ok := s.tableMap[tid]; ok {
+		return table, nil
+	}
 	table, err = queryTable(ctx, s, tx, tid)
+	if err != nil {
+		return
+	}
+	s.tableMap[tid] = table
 	return
 }
 
