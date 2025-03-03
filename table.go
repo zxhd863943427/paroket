@@ -9,6 +9,8 @@ import (
 	"paroket/tx"
 	"paroket/utils"
 	"sync"
+
+	"github.com/tidwall/gjson"
 )
 
 const createFtsTriggerTemplate = `CREATE TRIGGER %s AFTER UPDATE OF data ON %s 
@@ -87,14 +89,14 @@ func newTable(ctx context.Context, db common.Database, tx tx.WriteTx) (table com
 	if err != nil {
 		return
 	}
-	createFtsTrigger := fmt.Sprintf(
-		createFtsTriggerTemplate,
-		ftsTrigger, dataTable, dataTable, `''`,
-	)
-	_, err = tx.Exac(createFtsTrigger)
-	if err != nil {
-		return
-	}
+	// createFtsTrigger := fmt.Sprintf(
+	// 	createFtsTriggerTemplate,
+	// 	ftsTrigger, dataTable, dataTable, `''`,
+	// )
+	// _, err = tx.Exac(createFtsTrigger)
+	// if err != nil {
+	// 	return
+	// }
 	return
 }
 
@@ -150,8 +152,27 @@ func afterUpdateObject(ctx context.Context, db common.Database, tx tx.WriteTx, o
 		tidList = append(tidList, tableId)
 	}
 	for _, tid := range tidList {
-		updateRelateTable := fmt.Sprintf(`UPDATE %s SET data = jsonb(?) WHERE object_id = ?`, tid.DataTable())
-		if _, err = tx.Exac(updateRelateTable, obj.Data(), obj.ObjectId()); err != nil {
+		var table common.Table
+		idxBuffer := &bytes.Buffer{}
+		table, err = db.OpenTable(ctx, tx, tid)
+		if err != nil {
+			return
+		}
+		fields := table.Fields()
+		gjson.ParseBytes(obj.Data()).ForEach(func(key, value gjson.Result) bool {
+			for _, acid := range fields {
+				if acid.String() == key.Str {
+					// TODO
+					// 后续应该使用每个属性metainfo中的路径信息来建立索引
+					// 目前与触发器建立索引的性能差距为1:2.5，只能说触发器的性能确实不高。
+					idxBuffer.WriteString(fmt.Sprintf("%v", value.Get("value").Value()))
+				}
+			}
+			return true
+		})
+		idxStr := idxBuffer.String()
+		updateRelateTable := fmt.Sprintf(`UPDATE %s SET (data,idx) =( jsonb(?), ?) WHERE object_id = ?`, tid.DataTable())
+		if _, err = tx.Exac(updateRelateTable, obj.Data(), idxStr, obj.ObjectId()); err != nil {
 			return
 		}
 	}
@@ -178,6 +199,9 @@ func (t *tableImpl) MetaInfo() utils.JSONMap {
 		m[key] = t.metaInfo[key]
 	}
 	return m
+}
+func (t *tableImpl) Fields() []common.AttributeClassId {
+	return t.fields
 }
 
 func (t *tableImpl) Set(ctx context.Context, tx tx.WriteTx, v utils.JSONMap) (err error) {
@@ -251,7 +275,7 @@ func (t *tableImpl) FindId(ctx context.Context, tx tx.ReadTx, oidList ...common.
 	if err != nil {
 		return
 	}
-	objList, err = common.QueryTableObject(ctx, t.db, rows)
+	objList, err = common.QueryTableObjectList(ctx, t.db, rows)
 	if err != nil {
 		return
 	}
@@ -380,6 +404,12 @@ func (t *tableImpl) AddAttributeClass(ctx context.Context, tx tx.WriteTx, ac com
 
 // 修改索引触发器并更新全部索引
 func updateFtsIndex(ctx context.Context, t *tableImpl, acList []common.AttributeClass, tx tx.WriteTx) (err error) {
+	// 目前测试结果使用触发器更新索引比先读取再写入快一倍
+	// 5w对象 * 2 表 * 8 属性 的更新：
+	// sqlite数据库 4s
+	// prepare 6s
+	// 无prepare 8.8s
+
 	dataTable, ok := t.metaInfo["data_table"].(string)
 	if !ok {
 		err = fmt.Errorf("table metainfo not found dataTable")
@@ -410,34 +440,76 @@ func updateFtsIndex(ctx context.Context, t *tableImpl, acList []common.Attribute
 		}
 	}
 	searchIdxFormula := searchIdxFormulaBuffer.String()
+	if searchIdxFormula == "" {
+		searchIdxFormula = `''`
+	}
 
 	// 删除旧有trigger
-	triggerName, ok := t.metaInfo["fts_trigger"].(string)
-	if !ok {
-		err = fmt.Errorf("table metainfo not found fts_trigger")
-		return
-	}
-	deleteTrigger := fmt.Sprintf("DROP TRIGGER  %s", triggerName)
-	if _, err = tx.Exac(deleteTrigger); err != nil {
-		return
-	}
+	// triggerName, ok := t.metaInfo["fts_trigger"].(string)
+	// if !ok {
+	// 	err = fmt.Errorf("table metainfo not found fts_trigger")
+	// 	return
+	// }
+	// deleteTrigger := fmt.Sprintf("DROP TRIGGER  %s", triggerName)
+	// if _, err = tx.Exac(deleteTrigger); err != nil {
+	// 	return
+	// }
 
 	// 更新fts索引
 
-	updateFtsIdx := fmt.Sprintf(`
-		UPDATE %s SET idx = %s`, dataTable, searchIdxFormula)
-	if _, err = tx.Exac(updateFtsIdx); err != nil {
+	// updateFtsIdx := fmt.Sprintf(`
+	// 	UPDATE %s SET idx = %s`, dataTable, searchIdxFormula)
+	// if _, err = tx.Exac(updateFtsIdx); err != nil {
+	// 	return
+	// }
+
+	// 重建trigger
+	// createFtsTrigger := fmt.Sprintf(
+	// 	createFtsTriggerTemplate,
+	// 	triggerName, dataTable, dataTable, searchIdxFormula,
+	// )
+
+	// if _, err = tx.Exac(createFtsTrigger); err != nil {
+	// 	return
+	// }
+
+	queryObj := fmt.Sprintf(`
+	SELECT object_id, json(data) FROM %s`, dataTable)
+	rows, err := tx.Query(queryObj)
+	if err != nil {
 		return
 	}
 
-	// 重建trigger
-	createFtsTrigger := fmt.Sprintf(
-		createFtsTriggerTemplate,
-		triggerName, dataTable, dataTable, searchIdxFormula,
-	)
+	// objList, err := common.QueryTableObject(ctx, t.db, rows)
+	for rows.Next() {
+		var oid common.ObjectId
+		var obj common.Object
+		rows.Scan(&oid)
+		obj, err = common.QueryTableObject(ctx, t.db, rows)
+		if err != nil {
+			return
+		}
+		idxBuffer := &bytes.Buffer{}
 
-	if _, err = tx.Exac(createFtsTrigger); err != nil {
-		return
+		fields := t.Fields()
+		gjson.ParseBytes(obj.Data()).ForEach(func(key, value gjson.Result) bool {
+			for _, acid := range fields {
+				if acid.String() == key.Str {
+					// TODO
+					// 后续应该使用每个属性metainfo中的路径信息来建立索引
+					// 目前与触发器建立索引的性能差距为1:2.5，只能说触发器的性能确实不高。
+					idxBuffer.WriteString(fmt.Sprintf("%v", value.Get("value").Value()))
+				}
+			}
+			return true
+		})
+		idxStr := idxBuffer.String()
+		updateFtsIdxStmt := fmt.Sprintf(`
+	UPDATE %s SET idx = ? WHERE object_id = ?`, dataTable)
+
+		if _, err = tx.Exac(updateFtsIdxStmt, idxStr, obj.ObjectId()); err != nil {
+			return
+		}
 	}
 
 	return

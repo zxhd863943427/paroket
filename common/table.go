@@ -13,6 +13,8 @@ type Table interface {
 
 	MetaInfo() utils.JSONMap
 
+	Fields() []AttributeClassId
+
 	Set(ctx context.Context, tx tx.WriteTx, v utils.JSONMap) (err error)
 
 	FindId(ctx context.Context, tx tx.ReadTx, oidList ...ObjectId) ([]Object, error)

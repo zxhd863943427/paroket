@@ -17,7 +17,7 @@ import (
 
 var testAttrNum = 30
 var perAttrNum = 8
-var testObjNum = 50 * 100
+var testObjNum = 25 * 100 * 100
 var testTableNum = 2
 
 var logSapce = 10
@@ -104,13 +104,24 @@ func TestBenchmark(t *testing.T) {
 	}
 
 	//插入对象到表格
+	// ticker.start("insert obj to table")
+	// for idx, obj := range objList {
+	// 	for jdx, table := range tableList {
+	// 		if idx%testTableNum == jdx {
+	// 			err = table.Insert(ctx, tx, obj.ObjectId())
+	// 			assert.NoError(t, err)
+	// 		}
+	// 	}
+	// 	if idx%(testObjNum/logSapce) == 0 {
+	// 		ticker.log("insert obj to table")
+	// 		fmt.Println("insert  to table ", idx)
+	// 	}
+	// }
 	ticker.start("insert obj to table")
 	for idx, obj := range objList {
-		for jdx, table := range tableList {
-			if idx%testTableNum == jdx {
-				err = table.Insert(ctx, tx, obj.ObjectId())
-				assert.NoError(t, err)
-			}
+		for _, table := range tableList {
+			err = table.Insert(ctx, tx, obj.ObjectId())
+			assert.NoError(t, err)
 		}
 		if idx%(testObjNum/logSapce) == 0 {
 			ticker.log("insert obj to table")
@@ -139,6 +150,34 @@ func TestBenchmark(t *testing.T) {
 			fmt.Println("insert attribute to object ", idx)
 		}
 	}
+	ticker.log("insert attribute to object")
+
+	// 从表中删除属性
+	ticker.start(fmt.Sprintf("delete %d table %d attributeClass", testTableNum, perAttrNum))
+	for _, table := range tableList {
+		fields := table.Fields()
+		for _, acid := range fields {
+			ac, err := db.OpenAttributeClass(ctx, tx, acid)
+			assert.NoError(t, err)
+			err = table.DeleteAttributeClass(ctx, tx, ac)
+			assert.NoError(t, err)
+
+		}
+	}
+	ticker.log(fmt.Sprintf("delete %d table %d attributeClass", testTableNum, perAttrNum))
+
+	// 重新加入
+	ticker.start(fmt.Sprintf("add %d table %d attributeClass", testTableNum, perAttrNum))
+
+	for idx, ac := range acList {
+		if idx > perAttrNum {
+			break
+		}
+		for _, table := range tableList {
+			table.AddAttributeClass(ctx, tx, ac)
+		}
+	}
+	ticker.log(fmt.Sprintf("add %d table %d attributeClass", testTableNum, perAttrNum))
 
 }
 
@@ -208,7 +247,7 @@ func TestQueryBenchmark(t *testing.T) {
 	rows, err = tx.Query(queryStmt)
 	assert.NoError(t, err)
 
-	objList, err := common.QueryTableObject(ctx, db, rows)
+	objList, err := common.QueryTableObjectList(ctx, db, rows)
 
 	ticker.log("query item")
 	assert.NoError(t, err)
@@ -308,4 +347,65 @@ func TestQueryBenchmark(t *testing.T) {
 		fmt.Println("")
 
 	}
+}
+
+func TestBenchmarkRebuildFts(t *testing.T) {
+	ticker := newTimeTicker()
+
+	dbPath := "./testdata/test_benchmark.db"
+	// dbPath := ":memory:"
+
+	db := paroket.NewSqliteImpl()
+	err := db.Open(ctx, dbPath, nil)
+	defer db.Close(ctx)
+	if err != nil {
+		fmt.Println("create db err:", err)
+		return
+	}
+	tx, err := db.WriteTx(ctx)
+	assert.NoError(t, err)
+	defer tx.Commit()
+
+	var tid common.TableId
+	err = tx.QueryRow("SELECT table_id FROM tables").Scan(&tid)
+	assert.NoError(t, err)
+
+	acList := []common.AttributeClass{}
+	rows, err := tx.Query("SELECT class_id FROM attribute_classes", tid)
+	assert.NoError(t, err)
+	for rows.Next() {
+		var acid common.AttributeClassId
+		err = rows.Scan(&acid)
+		assert.NoError(t, err)
+		ac, err := db.OpenAttributeClass(ctx, tx, acid)
+		assert.NoError(t, err)
+		acList = append(acList, ac)
+	}
+
+	table, err := db.OpenTable(ctx, tx, tid)
+	assert.NoError(t, err)
+	fields := table.Fields()
+	ticker.start(fmt.Sprintf("delete %d class to table", len(fields)))
+	ticker.start("delete class to table")
+	for idx, acid := range fields {
+		ac, err := db.OpenAttributeClass(ctx, tx, acid)
+		assert.NoError(t, err)
+		table.DeleteAttributeClass(ctx, tx, ac)
+		fmt.Println("delete", idx, "class")
+		ticker.log("delete class to table")
+
+	}
+	ticker.log(fmt.Sprintf("delete %d class to table", len(fields)))
+
+	ticker.start(fmt.Sprintf("add %d class to table", len(acList)))
+	ticker.start("add class to table")
+
+	for idx, ac := range acList {
+		table.AddAttributeClass(ctx, tx, ac)
+		fmt.Printf("add %d class to table \n", idx)
+		ticker.log("add class to table")
+
+	}
+	ticker.log(fmt.Sprintf("add %d class to table", len(acList)))
+
 }

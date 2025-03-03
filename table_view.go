@@ -169,7 +169,7 @@ func (v *viewImpl) Query(ctx context.Context, tx tx.ReadTx) (queryData common.Ta
 	if err != nil {
 		return
 	}
-	objList, err := common.QueryTableObject(ctx, v.db, rows)
+	objList, err := common.QueryTableObjectList(ctx, v.db, rows)
 	if err != nil {
 		return
 	}

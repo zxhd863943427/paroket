@@ -55,15 +55,22 @@ func QueryObject(ctx context.Context, db Database, tx tx.ReadTx, oid ObjectId) (
 	return
 }
 
-func QueryTableObject(ctx context.Context, db Database, rows *sql.Rows) (objList []Object, err error) {
+func QueryTableObjectList(ctx context.Context, db Database, rows *sql.Rows) (objList []Object, err error) {
 	objList = []Object{}
 	for rows.Next() {
-		o := &object{db: db}
-		if err = rows.Scan(&o.objectId, &o.data); err != nil {
-			return
-		}
+		var o Object
+		o, err = QueryTableObject(ctx, db, rows)
 		objList = append(objList, o)
 	}
+	return
+}
+
+func QueryTableObject(ctx context.Context, db Database, rows *sql.Rows) (obj Object, err error) {
+	o := &object{db: db}
+	if err = rows.Scan(&o.objectId, &o.data); err != nil {
+		return
+	}
+	obj = o
 	return
 }
 func (obj *object) ObjectId() ObjectId {
