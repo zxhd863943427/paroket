@@ -79,6 +79,7 @@ func (nc *NumberAttributeClass) GetMetaInfo(ctx context.Context, tx tx.ReadTx) (
 	}
 	return m, nil
 }
+
 func (nc *NumberAttributeClass) Set(ctx context.Context, tx tx.WriteTx, v utils.JSONMap) (err error) {
 	oldName := nc.name
 	oldkey := nc.key
@@ -120,7 +121,7 @@ func (nc *NumberAttributeClass) Set(ctx context.Context, tx tx.WriteTx, v utils.
 	}
 	stmt := `
   UPDATE attribute_classes
-  SET (attribute_name,attribute_key,attribute_meta_info) = 
+  SET (attribute_name,attribute_key,attribute_meta_info) =
   (?,?,?)
   WHERE class_id = ?`
 	if _, err = tx.Exac(stmt, nc.name, nc.key, nc.metaInfo, nc.id); err != nil {
@@ -140,6 +141,12 @@ func (nc *NumberAttributeClass) Insert(ctx context.Context, tx tx.WriteTx, oid c
 	if err != nil {
 		return
 	}
+
+	//hook
+	nc.DoPreHook(ctx, nc.db, tx, NewOp(nc.id, obj, common.InsertAttribute, attr))
+	defer func() { nc.DoAfterHook(ctx, nc.db, tx, NewOp(nc.id, obj, common.InsertAttribute, attr)) }()
+	//hook
+
 	data := obj.Data()
 	newValue, err := sjson.SetRaw(string(data), nc.id.String(), attr.GetJSON())
 	if err != nil {
@@ -158,7 +165,7 @@ func (nc *NumberAttributeClass) Insert(ctx context.Context, tx tx.WriteTx, oid c
 	update := fmt.Sprintf(`
 INSERT INTO %s
   (object_id, updated)
-VALUES 
+VALUES
   (?,?)`, updateTable)
 	opId := xid.New()
 
@@ -193,6 +200,12 @@ func (nc *NumberAttributeClass) FindId(ctx context.Context, tx tx.ReadTx, oid co
 }
 func (nc *NumberAttributeClass) Update(ctx context.Context, tx tx.WriteTx, oid common.ObjectId, attr common.Attribute) (err error) {
 	obj, err := nc.db.OpenObject(ctx, tx, oid)
+
+	//hook
+	nc.DoPreHook(ctx, nc.db, tx, NewOp(nc.id, obj, common.UpdateAttribute, attr))
+	defer func() { nc.DoAfterHook(ctx, nc.db, tx, NewOp(nc.id, obj, common.UpdateAttribute, attr)) }()
+	//hook
+
 	if err != nil {
 		return
 	}
@@ -228,6 +241,12 @@ func (nc *NumberAttributeClass) Delete(ctx context.Context, tx tx.WriteTx, oid c
 	if err != nil {
 		return
 	}
+
+	//hook
+	nc.DoPreHook(ctx, nc.db, tx, NewOp(nc.id, obj, common.DeleteAttribute, nil))
+	defer func() { nc.DoAfterHook(ctx, nc.db, tx, NewOp(nc.id, obj, common.DeleteAttribute, nil)) }()
+	//hook
+
 	data := obj.Data()
 	newValue, err := sjson.Delete(string(data), nc.id.String())
 	if err != nil {

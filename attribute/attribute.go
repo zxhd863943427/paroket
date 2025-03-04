@@ -63,8 +63,8 @@ func NewAttributeClass(ctx context.Context, db common.Database, tx tx.WriteTx, a
 func QueryAttributeClass(ctx context.Context, db common.Database, tx tx.ReadTx, acid common.AttributeClassId) (ac common.AttributeClass, err error) {
 	var acProto AttributeClassInfo
 	acProto.db = db
-	stmt := `SELECT 
-	  class_id, attribute_name, attribute_key, attribute_type, attribute_meta_info 
+	stmt := `SELECT
+	  class_id, attribute_name, attribute_key, attribute_type, attribute_meta_info
 	  FROM attribute_classes
 	  WHERE class_id = ?`
 	err = tx.QueryRow(stmt, acid).Scan(&acProto.id, &acProto.name, &acProto.key, &acProto.attrType, &acProto.metaInfo)
@@ -95,7 +95,67 @@ func (t *AttributeClassInfo) Key() string {
 	return t.key
 }
 
+func (t *AttributeClassInfo) DoPreHook(ctx context.Context, db common.Database, tx tx.WriteTx, op common.AttributeOp) (err error) {
+	fList := common.ListPreAttributeHook()
+	for _, f := range fList {
+		nerr := f(ctx, db, tx, op)
+		if nerr != nil {
+			if err != nil {
+				err = fmt.Errorf("%w:%w", err, nerr)
+			}
+			err = nerr
+		}
+	}
+	return
+}
+func (t *AttributeClassInfo) DoAfterHook(ctx context.Context, db common.Database, tx tx.WriteTx, op common.AttributeOp) (err error) {
+	fList := common.ListAfterAttributeHook()
+	for _, f := range fList {
+		nerr := f(ctx, db, tx, op)
+		if nerr != nil {
+			if err != nil {
+				err = fmt.Errorf("%w:%w", err, nerr)
+			}
+			err = nerr
+		}
+	}
+	return
+}
+
 const (
 	AttributeTypeText   common.AttributeType = "text"
 	AttributeTypeNumber common.AttributeType = "number"
+	AttributeTypeLink   common.AttributeType = "link"
 )
+
+type attrOp struct {
+	classId   common.AttributeClassId
+	obj       common.Object
+	op        common.AttributeOpType
+	attribute common.Attribute
+}
+
+func NewOp(cid common.AttributeClassId, obj common.Object, op common.AttributeOpType, attr common.Attribute) common.AttributeOp {
+	return &attrOp{
+		classId:   cid,
+		obj:       obj,
+		op:        op,
+		attribute: attr,
+	}
+}
+
+func (op *attrOp) ClassId() common.AttributeClassId {
+	return op.classId
+}
+
+func (op *attrOp) Object() common.Object {
+	return op.obj
+}
+
+func (op *attrOp) Op() common.AttributeOpType {
+	return op.op
+}
+
+func (op *attrOp) Attribute() common.Attribute {
+	return op.attribute
+}

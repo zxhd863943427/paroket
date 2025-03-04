@@ -145,6 +145,12 @@ func (tc *TextAttributeClass) Insert(ctx context.Context, tx tx.WriteTx, oid com
 	if err != nil {
 		return
 	}
+
+	//hook
+	tc.DoPreHook(ctx, tc.db, tx, NewOp(tc.id, obj, common.InsertAttribute, attr))
+	defer func() { tc.DoAfterHook(ctx, tc.db, tx, NewOp(tc.id, obj, common.InsertAttribute, attr)) }()
+	//hook
+
 	data := obj.Data()
 	newValue, err := sjson.SetRaw(string(data), tc.id.String(), attr.GetJSON())
 	if err != nil {
@@ -201,6 +207,12 @@ func (tc *TextAttributeClass) Update(ctx context.Context, tx tx.WriteTx, oid com
 	if err != nil {
 		return
 	}
+
+	//hook
+	tc.DoPreHook(ctx, tc.db, tx, NewOp(tc.id, obj, common.UpdateAttribute, attr))
+	defer func() { tc.DoAfterHook(ctx, tc.db, tx, NewOp(tc.id, obj, common.UpdateAttribute, attr)) }()
+	//hook
+
 	data := obj.Data()
 	newValue, err := sjson.SetRaw(string(data), tc.id.String(), attr.GetJSON())
 	if err != nil {
@@ -233,6 +245,12 @@ func (tc *TextAttributeClass) Delete(ctx context.Context, tx tx.WriteTx, oid com
 	if err != nil {
 		return
 	}
+
+	//hook
+	tc.DoPreHook(ctx, tc.db, tx, NewOp(tc.id, obj, common.DeleteAttribute, nil))
+	defer func() { tc.DoAfterHook(ctx, tc.db, tx, NewOp(tc.id, obj, common.DeleteAttribute, nil)) }()
+	//hook
+
 	data := obj.Data()
 	newValue, err := sjson.Delete(string(data), tc.id.String())
 	if err != nil {

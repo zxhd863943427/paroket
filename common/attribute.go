@@ -11,6 +11,8 @@ type AttributeClass interface {
 	Key() string
 	Type() AttributeType
 	ClassId() AttributeClassId
+	DoPreHook(ctx context.Context, db Database, tx tx.WriteTx, op AttributeOp) (err error)
+	DoAfterHook(ctx context.Context, db Database, tx tx.WriteTx, op AttributeOp) (err error)
 	GetMetaInfo(ctx context.Context, tx tx.ReadTx) (v utils.JSONMap, err error)
 	Set(ctx context.Context, tx tx.WriteTx, v utils.JSONMap) (err error)
 	Insert(ctx context.Context, tx tx.WriteTx, oid ObjectId) (attr Attribute, err error)
@@ -35,3 +37,59 @@ type Attribute interface {
 }
 
 type AttributeType string
+
+type AttributeOp interface {
+	ClassId() AttributeClassId
+	Object() Object
+	Op() AttributeOpType
+	Attribute() Attribute
+}
+
+type AttributeOpType string
+
+const (
+	DeleteAttribute AttributeOpType = "delete"
+	InsertAttribute AttributeOpType = "insert"
+	UpdateAttribute AttributeOpType = "update"
+)
+
+type AttributeHookFunc func(ctx context.Context, db Database, tx tx.WriteTx, op AttributeOp) (err error)
+
+var preHook map[AttributeClassId]AttributeHookFunc
+var afterHook map[AttributeClassId]AttributeHookFunc
+
+func RegisterPreAttributeHook(acid AttributeClassId, hook AttributeHookFunc) (err error) {
+	preHook[acid] = hook
+	return nil
+}
+
+func DeletePreAttributeHook(acid AttributeClassId) (err error) {
+	delete(preHook, acid)
+	return nil
+}
+
+func ListPreAttributeHook() []AttributeHookFunc {
+	ret := []AttributeHookFunc{}
+	for _, f := range preHook {
+		ret = append(ret, f)
+	}
+	return ret
+}
+
+func RegisterAfterAttributeHook(acid AttributeClassId, hook AttributeHookFunc) (err error) {
+	afterHook[acid] = hook
+	return nil
+}
+
+func DeleteAfterAttributeHook(acid AttributeClassId) (err error) {
+	delete(afterHook, acid)
+	return nil
+}
+
+func ListAfterAttributeHook() []AttributeHookFunc {
+	ret := []AttributeHookFunc{}
+	for _, f := range afterHook {
+		ret = append(ret, f)
+	}
+	return ret
+}

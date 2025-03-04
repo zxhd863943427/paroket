@@ -99,6 +99,17 @@ func (s *sqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 		unique (attribute_key)
 	);`
 
+	// 创建属性类之间的依赖关系
+	createAttributeClassDependStmt := `CREATE TABLE IF NOT EXISTS attribute_classes_dep (
+		class_id BLOB NOT NULL,
+		dep_class_id BLOB NOT NULL,
+		FOREIGN KEY (class_id) REFERENCES attribute_classes(class_id) ON DELETE CASCADE,
+		FOREIGN KEY (dep_class_id) REFERENCES attribute_classes(class_id) ON DELETE CASCADE
+	);
+	CREATE INDEX IF NOT EXISTS attribute_classes_dep_class_id_idx ON attribute_classes_dep (class_id);
+	CREATE INDEX IF NOT EXISTS attribute_classes_dep_dep_class_id_idx ON attribute_classes_dep (dep_class_id);
+	`
+
 	// 创建表与属性类的关联表
 	createTableToAttributeClassStmt := `CREATE TABLE IF NOT EXISTS table_to_attribute_classes (
 		table_id BLOB NOT NULL,
@@ -133,6 +144,7 @@ func (s *sqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 		createObjectStmt,
 		createTableStmt,
 		createAttributeClassStmt,
+		createAttributeClassDependStmt,
 		createTableViewStmt,
 		createTableToAttributeClassStmt,
 		createObjectToAttributeClassStmt,
@@ -161,6 +173,16 @@ func (s *sqliteImpl) Open(ctx context.Context, dbPath string, config *common.Con
 		return
 	}
 	s.db = db
+	//初始化attribute操作
+	tx, err := s.ReadTx(ctx)
+	defer tx.Commit()
+	if err != nil {
+		return
+	}
+	_, err = s.ListAttributeClass(ctx, tx)
+	if err != nil {
+		return
+	}
 	return
 }
 
