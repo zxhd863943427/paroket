@@ -415,63 +415,6 @@ func updateFtsIndex(ctx context.Context, t *tableImpl, acList []common.Attribute
 		err = fmt.Errorf("table metainfo not found dataTable")
 		return
 	}
-	// 构建索引表达式
-	searchIdxFormulaBuffer := &bytes.Buffer{}
-	lenAc := len(acList)
-	for idx, acItem := range acList {
-		var metaInfo utils.JSONMap
-		metaInfo, err = acItem.GetMetaInfo(ctx, tx)
-		if err != nil {
-			return
-		}
-		jsonValuePath, ok := metaInfo["json_value_path"]
-		if !ok {
-			err = fmt.Errorf("add attributeclass to table failed:can not get json path")
-			return
-		}
-		searchIdxFormulaBuffer.WriteString(
-			fmt.Sprintf(
-				`COALESCE(%s.data ->>'%s','')`,
-				dataTable, jsonValuePath,
-			),
-		)
-		if idx != lenAc-1 {
-			searchIdxFormulaBuffer.WriteString(" || X'E2808B' || ")
-		}
-	}
-	searchIdxFormula := searchIdxFormulaBuffer.String()
-	if searchIdxFormula == "" {
-		searchIdxFormula = `''`
-	}
-
-	// 删除旧有trigger
-	// triggerName, ok := t.metaInfo["fts_trigger"].(string)
-	// if !ok {
-	// 	err = fmt.Errorf("table metainfo not found fts_trigger")
-	// 	return
-	// }
-	// deleteTrigger := fmt.Sprintf("DROP TRIGGER  %s", triggerName)
-	// if _, err = tx.Exac(deleteTrigger); err != nil {
-	// 	return
-	// }
-
-	// 更新fts索引
-
-	// updateFtsIdx := fmt.Sprintf(`
-	// 	UPDATE %s SET idx = %s`, dataTable, searchIdxFormula)
-	// if _, err = tx.Exac(updateFtsIdx); err != nil {
-	// 	return
-	// }
-
-	// 重建trigger
-	// createFtsTrigger := fmt.Sprintf(
-	// 	createFtsTriggerTemplate,
-	// 	triggerName, dataTable, dataTable, searchIdxFormula,
-	// )
-
-	// if _, err = tx.Exac(createFtsTrigger); err != nil {
-	// 	return
-	// }
 
 	queryObj := fmt.Sprintf(`
 	SELECT object_id, json(data) FROM %s`, dataTable)
