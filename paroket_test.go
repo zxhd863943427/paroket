@@ -1,6 +1,7 @@
 package paroket_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 var testAttributeType = []common.AttributeType{
 	attribute.AttributeTypeText,
 	attribute.AttributeTypeNumber,
+	attribute.AttributeTypeLink,
 }
 
 func TestSqliteImpl(t *testing.T) {
@@ -392,9 +394,12 @@ func TestSqliteImpl(t *testing.T) {
 		// 创建属性类列表
 		acList := []common.AttributeClass{}
 		for _, acType := range testAttributeType {
-			for i := 1; i < acNum; i++ {
+			for i := 0; i < acNum; i++ {
 				ac, err := sqlite.CreateAttributeClass(ctx, tx, acType)
 				assert.NoError(t, err)
+				err = SetAC(t, ctx, tx, ac, i)
+				assert.NoError(t, err)
+
 				acList = append(acList, ac)
 
 			}
@@ -462,6 +467,55 @@ func TestSqliteImpl(t *testing.T) {
 	})
 }
 
+func SetAC(t *testing.T, ctx context.Context, tx tx.WriteTx, ac common.AttributeClass, i int) (err error) {
+
+	switch ac.Type() {
+	case attribute.AttributeTypeText:
+		newName := fmt.Sprintf("text_%d", i)
+		err = ac.Set(ctx, tx, map[string]interface{}{
+			"name": newName,
+		})
+		assert.NoError(t, err)
+	case attribute.AttributeTypeNumber:
+		newName := fmt.Sprintf("number_%d", i)
+		err = ac.Set(ctx, tx, map[string]interface{}{
+			"name": newName,
+		})
+		assert.NoError(t, err)
+	case attribute.AttributeTypeLink:
+		queryAcid := `SELECT class_id FROM attribute_classes WHERE attribute_type != 'link' limit 3`
+		rows, err := tx.Query(queryAcid)
+		assert.NoError(t, err)
+		buf := &bytes.Buffer{}
+		buf.WriteString("[")
+		idx := 0
+		for rows.Next() {
+			if idx != 0 {
+				buf.WriteString(",")
+			}
+			idx++
+			var acid common.AttributeClassId
+			rows.Scan(&acid)
+			buf.WriteString(fmt.Sprintf(`"%v"`, acid))
+		}
+		buf.WriteString("]")
+
+		nvalue := buf.String()
+		newName := fmt.Sprintf("link_%d", i)
+		err = ac.Set(ctx, tx, map[string]interface{}{
+			"dep_attribute": nvalue,
+			"name":          newName,
+		})
+		assert.NoError(t, err)
+	default:
+		err = fmt.Errorf("unsupport type")
+		return
+	}
+
+	assert.NoError(t, err)
+	return
+}
+
 func SetValue(t *testing.T, ctx context.Context, tx tx.WriteTx, ac common.AttributeClass, oid common.ObjectId, i, j int) (err error) {
 	attr, err := ac.Insert(ctx, tx, oid)
 	assert.NoError(t, err)
@@ -475,6 +529,13 @@ func SetValue(t *testing.T, ctx context.Context, tx tx.WriteTx, ac common.Attrib
 		nvalue := 1000*j + i
 		err = attr.SetValue(map[string]interface{}{
 			"value": nvalue,
+		})
+	case attribute.AttributeTypeLink:
+		nvalue := fmt.Sprintf(`["%v"]`, oid)
+		err = attr.SetValue(map[string]interface{}{
+			"update": nvalue,
+			"ctx":    ctx,
+			"tx":     tx,
 		})
 	default:
 		err = fmt.Errorf("unsupport type")

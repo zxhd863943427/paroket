@@ -55,8 +55,8 @@ const (
 
 type AttributeHookFunc func(ctx context.Context, db Database, tx tx.WriteTx, op AttributeOp) (err error)
 
-var preHook map[AttributeClassId]AttributeHookFunc
-var afterHook map[AttributeClassId]AttributeHookFunc
+var preHook = map[AttributeClassId]AttributeHookFunc{}
+var afterHook = map[AttributeClassId]AttributeHookFunc{}
 
 func RegisterPreAttributeHook(acid AttributeClassId, hook AttributeHookFunc) (err error) {
 	preHook[acid] = hook

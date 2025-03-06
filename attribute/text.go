@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS %v(
 	return
 }
 
-func parseTextAttributeClass(_ context.Context, acProto *AttributeClassInfo) (ac common.AttributeClass, err error) {
+func parseTextAttributeClass(_ context.Context, _ tx.ReadTx, acProto *AttributeClassInfo) (ac common.AttributeClass, err error) {
 	ac = &TextAttributeClass{*acProto}
 	return
 }

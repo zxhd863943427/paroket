@@ -21,7 +21,7 @@ type AttributeClassInfo struct {
 
 type AttributeClassInterface struct {
 	Create func(ctx context.Context, db common.Database, tx tx.WriteTx) (attr common.AttributeClass, err error)
-	Parse  func(ctx context.Context, acProto *AttributeClassInfo) (ac common.AttributeClass, err error)
+	Parse  func(ctx context.Context, tx tx.ReadTx, acProto *AttributeClassInfo) (ac common.AttributeClass, err error)
 }
 
 var AttributeClassMap = map[common.AttributeType]*AttributeClassInterface{}
@@ -31,11 +31,13 @@ func init() {
 
 	RegisterAttributeClass(AttributeTypeNumber, newNumberAttributeClass, parseNumberAttributeClass)
 
+	RegisterAttributeClass(AttributeTypeLink, newLinkAttributeClass, parseLinkAttributeClass)
+
 }
 
 func RegisterAttributeClass(attrType common.AttributeType,
 	create func(ctx context.Context, db common.Database, tx tx.WriteTx) (attr common.AttributeClass, err error),
-	parse func(ctx context.Context, acProto *AttributeClassInfo) (ac common.AttributeClass, err error),
+	parse func(ctx context.Context, tx tx.ReadTx, acProto *AttributeClassInfo) (ac common.AttributeClass, err error),
 ) (err error) {
 	if create == nil {
 		err = fmt.Errorf("attributeClass create is nil")
@@ -76,7 +78,7 @@ func QueryAttributeClass(ctx context.Context, db common.Database, tx tx.ReadTx, 
 	if !ok {
 		return nil, fmt.Errorf("unsupport type form database %s", acProto.attrType)
 	}
-	return acInterface.Parse(ctx, &acProto)
+	return acInterface.Parse(ctx, tx, &acProto)
 }
 
 // 一些attributeClass的公用实现

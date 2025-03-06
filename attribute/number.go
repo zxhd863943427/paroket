@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS %v(
 	return
 }
 
-func parseNumberAttributeClass(_ context.Context, acProto *AttributeClassInfo) (ac common.AttributeClass, err error) {
+func parseNumberAttributeClass(_ context.Context, _ tx.ReadTx, acProto *AttributeClassInfo) (ac common.AttributeClass, err error) {
 	ac = &NumberAttributeClass{*acProto}
 	return
 }
