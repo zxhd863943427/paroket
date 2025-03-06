@@ -7,7 +7,7 @@
 * [ ] 支持多种不同类型的属性（富文本、数字、多选、单选、checkbox）
   * [x] text
   * [x] number
-  * [ ] link
+  * [x] link
   * [ ] formula
   * [ ] rollup
 * [x] 每个对象拥有多个属性
