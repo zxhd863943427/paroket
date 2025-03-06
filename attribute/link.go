@@ -271,7 +271,7 @@ func refreshLink(ctx context.Context, db common.Database, tx tx.WriteTx, op comm
 			if err != nil {
 				return
 			}
-			refLink.Update(ctx, tx, oid, refLinkAttrImpl)
+			err = refLink.Update(ctx, tx, oid, refLinkAttrImpl)
 			if err != nil {
 				return
 			}
