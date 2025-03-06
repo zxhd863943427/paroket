@@ -44,8 +44,10 @@ func newTextAttributeClass(_ context.Context, db common.Database, tx tx.WriteTx)
 			key:      id.String(),
 			attrType: AttributeTypeText,
 			metaInfo: utils.JSONMap{
-				"json_value_path": jsonValuePath,
-				"updated_table":   updateTable,
+				"json_value_path":  jsonValuePath,
+				"updated_table":    updateTable,
+				"gjson_value_path": "value",
+				"gjson_idx_path":   "value",
 			},
 		},
 	}

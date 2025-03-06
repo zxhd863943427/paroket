@@ -64,17 +64,7 @@ func newTable(ctx context.Context, db common.Database, tx tx.WriteTx) (table com
 		idx BLOB DEFAULT '',
 		FOREIGN KEY (object_id) REFERENCES objects(object_id) ON DELETE CASCADE
 	);
-	CREATE TRIGGER IF NOT EXISTS insert_%s 
-	AFTER INSERT ON %s
-	FOR EACH ROW
-	BEGIN
-		UPDATE %s SET data = 
-		(SELECT data
-		FROM objects
-		WHERE objects.object_id = NEW.object_id LIMIT 1)
-		WHERE object_id = NEW.object_id;
-	END;
-	`, dataTable, dataTable, dataTable, dataTable)
+	`, dataTable)
 	_, err = tx.Exac(createTable)
 	if err != nil {
 		return
@@ -163,9 +153,16 @@ func afterUpdateObject(ctx context.Context, db common.Database, tx tx.WriteTx, o
 			for _, acid := range fields {
 				if acid.String() == key.Str {
 					// TODO
-					// 后续应该使用每个属性metainfo中的路径信息来建立索引
-					// 目前与触发器建立索引的性能差距为1:2.5，只能说触发器的性能确实不高。
-					idxBuffer.WriteString(fmt.Sprintf("%v", value.Get("value").Value()))
+					// 需要加入分隔符
+					var ac common.AttributeClass
+					var acMetaInfo utils.JSONMap
+					ac, err = db.OpenAttributeClass(ctx, tx, acid)
+					acMetaInfo, err = ac.GetMetaInfo(ctx, tx)
+					idxPath, ok := acMetaInfo["gjson_idx_path"].(string)
+					if !ok {
+						err = fmt.Errorf("ac metainfo not found gjson_idx_path")
+					}
+					idxBuffer.WriteString(fmt.Sprintf("%v", value.Get(idxPath).Value()))
 				}
 			}
 			return true
@@ -292,21 +289,24 @@ func (t *tableImpl) Insert(ctx context.Context, tx tx.WriteTx, oidList ...common
 	}
 	stmt := fmt.Sprintf(`
 	INSERT INTO %s
-    	(object_id)
+    	(object_id,data)
   	VALUES
-    	(?);`, dataTable)
+    	(?,?);`, dataTable)
 	InsertTableObjRelation := `
 	INSERT INTO object_to_tables
 		(object_id, table_id)
 	VALUES
 		(?,?)`
 	for _, oid := range oidList {
-		if _, err = tx.Exac(stmt, oid); err != nil {
+		var obj common.Object
+		obj, err = t.db.OpenObject(ctx, tx, oid)
+		if _, err = tx.Exac(stmt, oid, obj.Data()); err != nil {
 			return
 		}
 		if _, err = tx.Exac(InsertTableObjRelation, oid, t.tableId); err != nil {
 			return
 		}
+		afterUpdateObject(ctx, t.db, tx, obj)
 	}
 	return
 }
@@ -434,14 +434,18 @@ func updateFtsIndex(ctx context.Context, t *tableImpl, acList []common.Attribute
 		}
 		idxBuffer := &bytes.Buffer{}
 
-		fields := t.Fields()
 		gjson.ParseBytes(obj.Data()).ForEach(func(key, value gjson.Result) bool {
-			for _, acid := range fields {
-				if acid.String() == key.Str {
+			for _, ac := range acList {
+				if ac.ClassId().String() == key.Str {
 					// TODO
-					// 后续应该使用每个属性metainfo中的路径信息来建立索引
-					// 目前与触发器建立索引的性能差距为1:2.5，只能说触发器的性能确实不高。
-					idxBuffer.WriteString(fmt.Sprintf("%v", value.Get("value").Value()))
+					// 需要加入分隔符
+					var acMetaInfo utils.JSONMap
+					acMetaInfo, err = ac.GetMetaInfo(ctx, tx)
+					idxPath, ok := acMetaInfo["gjson_idx_path"].(string)
+					if !ok {
+						err = fmt.Errorf("ac metainfo not found gjson_idx_path")
+					}
+					idxBuffer.WriteString(fmt.Sprintf("%v", value.Get(idxPath).Value()))
 				}
 			}
 			return true

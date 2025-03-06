@@ -39,8 +39,10 @@ func newNumberAttributeClass(_ context.Context, db common.Database, tx tx.WriteT
 			key:      id.String(),
 			attrType: AttributeTypeNumber,
 			metaInfo: utils.JSONMap{
-				"json_value_path": jsonValuePath,
-				"updated_table":   updateTable,
+				"json_value_path":  jsonValuePath,
+				"updated_table":    updateTable,
+				"gjson_value_path": "value",
+				"gjson_idx_path":   "value",
 			},
 		},
 	}
